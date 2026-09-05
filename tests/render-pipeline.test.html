@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>渲染管线测试</title>
+    <script src="../packages/core/src/parser.js"></script>
+    <script src="../packages/core/src/reactive.js"></script>
+    <script src="../packages/core/src/render.js"></script>
+    <script src="../packages/core/src/component.js"></script>
+</head>
+<body>
+    <h1>渲染管线测试</h1>
+    
+    <div id="test-container"></div>
+    
+    <script>
+
+        console.log('=== 测试1: 基础文本绑定 ===')
+        const template1 = `
+            <div>
+                <h1>{{ title }}</h1>
+                <p>欢迎来到 {{ app }}!</p>
+            </div>
+        `
+        
+        const component1 = createComponent({
+            name: 'test1',
+            template: template1,
+            script: () => ({
+                state: {
+                    title: 'yq-sanyi',
+                    app: 'Web框架'
+                }
+            }),
+            container: document.getElementById('test-container')
+        })
+        
+        mountComponent(component1)
+        console.log('组件1渲染完成:', component1.root.innerHTML)
+        
+
+        console.log('=== 测试2: 属性绑定 ===')
+        const template2 = `
+            <div>
+                <input type="text" placeholder="{{ placeholder }}" value="{{ value }}" />
+                <button disabled="{{ isDisabled }}">提交</button>
+            </div>
+        `
+        
+        const component2 = createComponent({
+            name: 'test2',
+            template: template2,
+            script: () => ({
+                state: {
+                    placeholder: '请输入内容',
+                    value: '默认值',
+                    isDisabled: false
+                }
+            }),
+            container: document.getElementById('test-container')
+        })
+        
+        mountComponent(component2)
+        console.log('组件2渲染完成:', component2.root.innerHTML)
+        
+
+        console.log('=== 测试3: 列表渲染 ===')
+        const template3 = `
+            <div>
+                <h2>用户列表</h2>
+                <ul>
+                    <li yq-for="user in users">{{ user.name }} - {{ user.age }}</li>
+                </ul>
+            </div>
+        `
+        
+        const component3 = createComponent({
+            name: 'test3',
+            template: template3,
+            script: () => ({
+                state: {
+                    users: [
+                        { name: '张三', age: 25 },
+                        { name: '李四', age: 30 },
+                        { name: '王五', age: 28 }
+                    ]
+                }
+            }),
+            container: document.getElementById('test-container')
+        })
+        
+        mountComponent(component3)
+        console.log('组件3渲染完成:', component3.root.innerHTML)
+        
+
+        console.log('=== 测试4: 响应式更新 ===')
+        setTimeout(() => {
+            component1.state.title = 'yq-sanyi v2.0'
+            component1.state.app = '现代Web框架'
+            updateComponent(component1)
+            console.log('组件1更新完成:', component1.root.innerHTML)
+            
+            component2.state.value = '新值'
+            component2.state.isDisabled = true
+            updateComponent(component2)
+            console.log('组件2更新完成:', component2.root.innerHTML)
+            
+            component3.state.users.push({ name: '赵六', age: 35 })
+            updateComponent(component3)
+            console.log('组件3更新完成:', component3.root.innerHTML)
+        }, 1000)
+        
+
+        console.log('=== 测试5: 派生状态 ===')
+        const template5 = `
+            <div>
+                <h2>购物车</h2>
+                <div>商品数量: {{ itemCount }}</div>
+                <div>总价: {{ totalPrice }}</div>
+            </div>
+        `
+        
+        const component5 = createComponent({
+            name: 'test5',
+            template: template5,
+            script: () => ({
+                state: {
+                    items: [
+                        { name: '商品A', price: 100, quantity: 2 },
+                        { name: '商品B', price: 200, quantity: 1 }
+                    ]
+                },
+                derived: {
+                    itemCount: (state) => state.items.reduce((sum, item) => sum + item.quantity, 0),
+                    totalPrice: (state) => state.items.reduce((sum, item) => sum + item.price * item.quantity, 0)
+                }
+            }),
+            container: document.getElementById('test-container')
+        })
+        
+        mountComponent(component5)
+        console.log('组件5渲染完成:', component5.root.innerHTML)
+        
+
+        console.log('=== 测试6: 效果 ===')
+        const template6 = `
+            <div>
+                <h2>计数器</h2>
+                <button onclick="increment()">+1</button>
+                <div>计数: {{ count }}</div>
+                <div>点击次数: {{ clickCount }}</div>
+            </div>
+        `
+        
+        const component6 = createComponent({
+            name: 'test6',
+            template: template6,
+            script: () => ({
+                state: {
+                    count: 0,
+                    clickCount: 0
+                },
+                effect: () => {
+                    console.log('组件已挂载，初始值:', component6.state.count)
+                    return () => {
+                        console.log('组件已卸载')
+                    }
+                }
+            }),
+            container: document.getElementById('test-container')
+        })
+        
+
+        window.increment = () => {
+            component6.state.count++
+            component6.state.clickCount++
+            updateComponent(component6)
+        }
+        
+        mountComponent(component6)
+        console.log('组件6渲染完成:', component6.root.innerHTML)
+        
+
+        console.log('=== 测试7: 完整功能演示 ===')
+        const template7 = `
+            <div class="app">
+                <h1>{{ title }}</h1>
+                <div class="form">
+                    <input type="text" placeholder="输入内容" value="{{ inputValue }}" />
+                    <button onclick="addItem()" disabled="{{ isDisabled }}">添加</button>
+                </div>
+                <div class="list">
+                    <h2>列表项 ({{ items.length }})</h2>
+                    <ul>
+                        <li yq-for="item in items">{{ item.text }}</li>
+                    </ul>
+                </div>
+                <div class="stats">
+                    <p>字符数: {{ inputLength }}</p>
+                    <p>项目数: {{ itemCount }}</p>
+                </div>
+            </div>
+        `
+        
+        const component7 = createComponent({
+            name: 'test7',
+            template: template7,
+            script: () => ({
+                state: {
+                    title: '完整功能演示',
+                    inputValue: '',
+                    isDisabled: false,
+                    items: []
+                },
+                derived: {
+                    inputLength: (state) => state.inputValue.length,
+                    itemCount: (state) => state.items.length
+                },
+                effect: () => {
+                    console.log('应用已启动')
+                    return () => {
+                        console.log('应用已关闭')
+                    }
+                }
+            }),
+            container: document.getElementById('test-container')
+        })
+        
+
+        window.addItem = () => {
+            if (component7.state.inputValue.trim()) {
+                component7.state.items.push({
+                    text: component7.state.inputValue,
+                    timestamp: Date.now()
+                })
+                component7.state.inputValue = ''
+                updateComponent(component7)
+            }
+        }
+        
+        mountComponent(component7)
+        console.log('组件7渲染完成:', component7.root.innerHTML)
+        
+        console.log('=== 所有测试完成 ===')
+    </script>
+</body>
+</html>

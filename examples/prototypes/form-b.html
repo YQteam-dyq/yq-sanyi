@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Form-B - 模板就近组织语法原型</title>
+    <script src="../../packages/core/dist/core.global.js"></script>
+</head>
+<body>
+    <h1>Form-B - 模板就近组织语法原型</h1>
+    
+
+    <template data-yq="contact-form">
+        <style>
+            .contact-form { max-width: 400px; margin: 20px 0; padding: 20px; border: 1px solid #ddd; border-radius: 6px; }
+            .contact-form h2 { margin-top: 0; color: #333; }
+            .contact-form .form-group { margin-bottom: 15px; }
+            .contact-form label { display: block; margin-bottom: 5px; font-weight: 600; color: #555; }
+            .contact-form input, .contact-form textarea { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
+            .contact-form input:focus, .contact-form textarea:focus { outline: none; border-color: #007bff; box-shadow: 0 0 0 2px rgba(0,123,255,0.25); }
+            .contact-form button { background: #007bff; color: white; padding: 12px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
+            .contact-form button:hover { background: #0056b3; }
+            .contact-form button:disabled { background: #ccc; cursor: not-allowed; }
+            .contact-form .success { color: #28a745; margin-top: 10px; font-weight: 600; }
+            .contact-form .error { color: #dc3545; margin-top: 10px; font-weight: 600; }
+        </style>
+        <form class="contact-form">
+            <h2>联系我们</h2>
+            <div class="form-group">
+                <label for="name">姓名</label>
+                <input type="text" id="name" value="{{ formData.name }}" placeholder="请输入您的姓名">
+            </div>
+            <div class="form-group">
+                <label for="email">邮箱</label>
+                <input type="email" id="email" value="{{ formData.email }}" placeholder="请输入您的邮箱">
+            </div>
+            <div class="form-group">
+                <label for="subject">主题</label>
+                <input type="text" id="subject" value="{{ formData.subject }}" placeholder="请输入主题">
+            </div>
+            <div class="form-group">
+                <label for="message">消息</label>
+                <textarea id="message" rows="5" placeholder="请输入您的消息">{{ formData.message }}</textarea>
+            </div>
+            <button type="submit" disabled="{{ formData.sending }}">发送消息</button>
+            <div class="success">{{ formData.success }}</div>
+            <div class="error">{{ formData.error }}</div>
+        </form>
+        <script type="text/plain">
+            function() {
+                return {
+                    formData: {
+                        name: '',
+                        email: '',
+                        subject: '',
+                        message: '',
+                        sending: false,
+                        success: '',
+                        error: ''
+                    }
+                };
+            }
+        </script>
+    </template>
+
+
+    <template data-yq="product-list">
+        <style>
+            .product-list { max-width: 600px; margin: 20px 0; padding: 20px; border: 1px solid #ddd; border-radius: 6px; }
+            .product-list h2 { margin-top: 0; color: #333; }
+            .product-list .add-product { margin-bottom: 20px; display: flex; gap: 10px; }
+            .product-list .add-product input { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 4px; }
+            .product-list .add-product button { background: #28a745; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; }
+            .product-list .product-item { padding: 15px; border: 1px solid #eee; border-radius: 4px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; background: #f9f9f9; }
+            .product-list .product-item:hover { background: #f0f0f0; }
+            .product-list .product-item .product-name { font-weight: 600; color: #333; }
+            .product-list .product-item .product-price { color: #007bff; font-weight: 600; }
+            .product-list .product-item .delete-btn { background: #dc3545; color: white; padding: 5px 10px; border: none; border-radius: 3px; cursor: pointer; font-size: 12px; }
+            .product-list .product-item .delete-btn:hover { background: #c82333; }
+            .product-list .empty { text-align: center; color: #666; padding: 20px; font-style: italic; }
+        </style>
+        <div class="product-list">
+            <h2>产品列表</h2>
+            <div class="add-product">
+                <input type="text" placeholder="产品名称" value="{{ newProduct.name }}">
+                <input type="number" placeholder="价格" value="{{ newProduct.price }}">
+                <button yq-click="addProduct">添加产品</button>
+            </div>
+            <div>
+                <div yq-for="product in products" yq-key="product.id" class="product-item">
+                    <div>
+                        <span class="product-name">{{ product.name }}</span>
+                        <span class="product-price">¥{{ product.price }}</span>
+                    </div>
+                    <button class="delete-btn" yq-click="deleteProduct(product)">删除</button>
+                </div>
+                <div yq-if="products.length === 0" class="empty">
+                    暂无产品，请添加新产品
+                </div>
+            </div>
+        </div>
+        <script type="text/plain">
+            function() {
+                return {
+                    newProduct: { name: '', price: '' },
+                    products: [
+                        { id: 1, name: '笔记本电脑', price: 5999 },
+                        { id: 2, name: '无线鼠标', price: 199 }
+                    ],
+                    addProduct: function() {
+                        if (this.newProduct.name.trim() && this.newProduct.price) {
+                            this.products.push({
+                                id: Date.now(),
+                                name: this.newProduct.name.trim(),
+                                price: parseFloat(this.newProduct.price)
+                            });
+                            this.newProduct = { name: '', price: '' };
+                        }
+                    },
+                    deleteProduct: function(product) {
+                        const index = this.products.findIndex(p => p.id === product.id);
+                        if (index > -1) {
+                            this.products.splice(index, 1);
+                        }
+                    }
+                };
+            }
+        </script>
+    </template>
+
+    <div id="app">
+        <contact-form></contact-form>
+        <product-list></product-list>
+    </div>
+
+    <h2>CDO 解析摘要</h2>
+    <pre id="result"></pre>
+
+    <script>
+        function registerComponents() {
+            const templates = document.querySelectorAll('template[data-yq]');
+            
+            templates.forEach(template => {
+                const name = template.getAttribute('data-yq');
+                
+
+                const styleContent = template.querySelector('style')?.textContent || '';
+                const scriptContent = template.querySelector('script[type="text/plain"]')?.textContent || '';
+                const templateContent = template.innerHTML
+                    .replace(/<style[^>]*>[\s\S]*?<\/style>/g, '')
+                    .replace(/<script[^>]*type="text\/plain"[^>]*>[\s\S]*?<\/script>/g, '')
+                    .trim();
+                
+
+                yq.define(name, {
+                    style: styleContent,
+                    template: templateContent,
+                    script: scriptContent ? scriptContent.trim() : null
+                });
+            });
+        }
+
+        function displayCdoSummary() {
+            const contactForm = yq.lookup('contact-form');
+            const productList = yq.lookup('product-list');
+
+            const summary = `Form-B 模板就近组织语法 CDO 摘要：
+==============================
+
+1. contact-form 组件：
+   - 槽数量: ${contactForm.cdo.slots.length}
+   - 节点数量: ${contactForm.cdo.nodes.length}
+   - 样式文本长度: ${contactForm.cdo.styleText.length} 字节
+   - 脚本工厂可调用: ${contactForm.cdo.scriptFactory ? '是' : '否'}
+   - 槽类型分布: ${contactForm.cdo.slots.map(s => s.kind).join(', ')}
+
+2. product-list 组件：
+   - 槽数量: ${productList.cdo.slots.length}
+   - 节点数量: ${productList.cdo.nodes.length}
+   - 样式文本长度: ${productList.cdo.styleText.length} 字节
+   - 脚本工厂可调用: ${productList.cdo.scriptFactory ? '是' : '否'}
+   - 槽类型分布: ${productList.cdo.slots.map(s => s.kind).join(', ')}
+
+3. 引用自检：
+   - contactForm lookup 两次引用相同: ${contactForm === yq.lookup('contact-form') ? 'PASS' : 'FAIL'}
+   - productList lookup 两次引用相同: ${productList === yq.lookup('product-list') ? 'PASS' : 'FAIL'}
+
+4. 语法特点：
+   - 使用 <template data-yq="name"> 就近组织组件定义
+   - 样式写在 <style> 标签内，脚本写在 <script type="text/plain"> 内
+   - 页面 bootstrap 时手动提取三段内容并调用 yq.define
+   - 显式注册，非全文档预扫描模式
+   - 组件定义与使用位置接近，便于局部维护
+   - 支持文件直接打开，无构建依赖
+`;
+
+            document.getElementById('result').textContent = summary;
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            registerComponents();
+            displayCdoSummary();
+        });
+    </script>
+</body>
+</html>

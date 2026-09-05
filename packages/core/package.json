@@ -1,0 +1,16 @@
+{
+  "name": "yq-sanyi-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "yq-sanyi core runtime: component registry, reactive state, render pipeline, lifecycle",
+  "main": "dist/core.mjs",
+  "exports": {
+    ".": "./dist/core.mjs",
+    "./global": "./dist/core.global.js"
+  },
+  "files": [
+    "dist",
+    "src"
+  ]
+}

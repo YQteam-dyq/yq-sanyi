@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="script-src 'self'">
+    <title>CSP 脚本执行测试</title>
+    <script src="csp-test-app.js"></script>
+</head>
+<body>
+    <h1>CSP 脚本执行测试</h1>
+    <p>此页面启用了严格 CSP：script-src 'self'，禁止 unsafe-eval</p>
+    <div>
+        <h2>测试结果：</h2>
+        <pre id="out"></pre>
+    </div>
+</body>
+</html>
