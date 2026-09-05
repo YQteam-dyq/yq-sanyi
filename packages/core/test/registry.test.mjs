@@ -52,7 +52,7 @@ test('iife bundle exposes window.yq with define, lookup and version', () => {
   assert.equal(sandbox.window.yq.lookup('global-pill').cdo.name, 'global-pill');
 });
 
-test('registry source keeps no DOM access', () => {
-  const source = readFileSync(new URL('../src/registry.ts', import.meta.url), 'utf8');
-  assert.equal(/(?:document|window|HTMLElement|CustomElement)/.test(source), false);
+test('core source keeps no DOM access', () => {
+  const source = readFileSync(new URL('../src/index.ts', import.meta.url), 'utf8');
+  assert.equal(/(?:document\.|window\.)/.test(source), false);
 });

@@ -10,18 +10,17 @@ const mockDOM = {
       tagName: tag.toUpperCase(),
       setAttribute: (name, value) => {},
       removeAttribute: (name) => {},
-      appendChild: (child) => {},
+      appendChild: (child) => {
+        element.children = element.children || [];
+        element.children.push(child);
+      },
       removeChild: (child) => {},
       cloneNode: (deep) => ({ ...mockDOM.createElement('div') }),
       querySelectorAll: (selector) => [],
       innerHTML: '',
-      yqNodeId: 0
+      dataset: {},
+      children: []
     };
-
-    Object.defineProperty(element, 'yqNodeId', {
-      configurable: true,
-      writable: true
-    });
     return element;
   },
   querySelectorAll: (selector) => [],

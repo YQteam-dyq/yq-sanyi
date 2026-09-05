@@ -1,7 +1,6 @@
 export const version = '0.1.0'
 
-import { DebugPanel, DebugPanelOptions } from './debug-panel.js'
-import { DebugManager, DebugManagerOptions, getDebugManager } from './debug-manager-simple.js'
+import { getDebugManager } from './debug-manager-simple.js'
 import { ErrorBoundary } from './error-boundary.js'
 
 export interface ComponentDefinition {
@@ -77,12 +76,6 @@ export interface StyleInjection {
   element: HTMLStyleElement | null
 }
 
-export interface ScoperOptions {
-  scopeId: string
-  useShadowDOM?: boolean
-  themeVariables?: Record<string, string>
-}
-
 export interface Scoper {
   generateScopedCSS(cssText: string, scopeId: string): string
   injectStyle(cssText: string, scopeId: string): StyleInjection
@@ -135,6 +128,32 @@ export interface ComponentInstance {
   parent: ComponentInstance | null
   updateLogs: UpdateLog[]
   errorInfo: { hasError: boolean; error?: Error; timestamp?: number } | null
+  errorBoundary: any
+  hasError: boolean
+  errorCount: number
+  lastErrorTime: number | null
+}
+
+export function createRenderContext(state: Record<string, any>, slots: Slot[]): RenderContext {
+  return {
+    state,
+    slots,
+    nodeCache: new Map(),
+    listElements: new Map()
+  }
+}
+
+export function resolvePath(state: Record<string, any>, path?: string[]): any {
+  if (!path || path.length === 0) return undefined
+  let current = state
+  for (const segment of path) {
+    if (current && typeof current === 'object' && segment in current) {
+      current = current[segment]
+    } else {
+      return undefined
+    }
+  }
+  return current
 }
 
 const definitions = new Map<string, ComponentDefinition>()
@@ -142,7 +161,7 @@ const definitions = new Map<string, ComponentDefinition>()
 function parsePath(path: string): string[] {
   const parts = path.split('.')
   if (parts.length === 0 || parts.some(p => p.length === 0)) {
-    throw new Error(`invalid path: ${path}`)
+    throw new Error(`[yq:parse] invalid path: ${path}`)
   }
   return parts
 }
@@ -161,7 +180,10 @@ function parseTextParts(text: string, slots: Slot[], nodeId: number): ParsedPart
     }
     return parts
   }
-  parts.push({ static: decodeEntities(segments[0]) })
+  const first = decodeEntities(segments[0])
+  if (first.length > 0) {
+    parts.push({ static: first })
+  }
   for (let i = 1; i < segments.length; i++) {
     const segment = segments[i]
     const closing = segment.indexOf('}}')
@@ -170,7 +192,7 @@ function parseTextParts(text: string, slots: Slot[], nodeId: number): ParsedPart
     }
     const path = segment.substring(0, closing).trim()
     if (path.length === 0) {
-      throw new Error('empty expression in {{ }}')
+      throw new Error('[yq:parse] empty expression in {{ }}')
     }
     const pathSegments = parsePath(path)
     slots.push({ kind: 'text', nodeId, partIndex: parts.length })
@@ -189,7 +211,7 @@ function parseAttributeValue(value: string, attr: string, slots: Slot[], nodeId:
     if (trimmed.startsWith('{{') && trimmed.endsWith('}}')) {
       const inner = trimmed.substring(2, trimmed.length - 2).trim()
       if (inner.includes('{{') || inner.includes('}}')) {
-        throw new Error(`attribute binding only supports whole value form: ${attr}="${value}"`)
+        throw new Error(`[yq:parse] attribute binding only supports whole value form: ${attr}="${value}"`)
       }
       const pathSegments = parsePath(inner)
       if (BOOLEAN_ATTRS.has(attr)) {
@@ -199,7 +221,7 @@ function parseAttributeValue(value: string, attr: string, slots: Slot[], nodeId:
       }
       return [{ path: pathSegments }]
     } else {
-      throw new Error(`attribute binding only supports whole value form: ${attr}="${value}"`)
+      throw new Error(`[yq:parse] attribute binding only supports whole value form: ${attr}="${value}"`)
     }
   }
   return [{ static: decodeEntities(value) }]
@@ -374,12 +396,43 @@ function parseTemplate(name: string, template: string): { root: SNode; nodes: SN
       }
     }
 
+    if (node.list) {
+      slots.push({ kind: 'list', nodeId: node.id, itemVar: node.list.itemVar, itemsPath: node.list.itemsPath, keyProp: node.list.keyProp })
+    }
+
     if (VOID_TAGS.has(node.tag) || inSelfClosing) {
       return { node, remaining: html.substring(i) }
     }
 
-    const contentEnd = html.indexOf('</' + node.tag + '>')
-    if (contentEnd === -1) error(`unclosed tag: ${node.tag}`)
+    const closeTag = '</' + node.tag + '>'
+    let depth = 1
+    let searchPos = i
+    let contentEnd = -1
+    const openTagPrefix = '<' + node.tag
+
+    while (depth > 0) {
+      const nextClose = html.indexOf(closeTag, searchPos)
+      if (nextClose === -1) error(`unclosed tag: ${node.tag}`)
+
+      let scanPos = searchPos
+      while (scanPos < nextClose) {
+        const nextOpen = html.indexOf(openTagPrefix, scanPos)
+        if (nextOpen === -1 || nextOpen >= nextClose) break
+        const afterOpen = nextOpen + openTagPrefix.length
+        if (afterOpen < html.length && /[ =>\/\t\n\r]/.test(html[afterOpen])) {
+          depth++
+        }
+        scanPos = nextOpen + 1
+      }
+
+      depth--
+      if (depth === 0) {
+        contentEnd = nextClose
+        break
+      }
+      searchPos = nextClose + closeTag.length
+    }
+
     const content = html.substring(i, contentEnd)
     const afterClose = contentEnd + node.tag.length + 3
 
@@ -431,12 +484,11 @@ function parseTemplate(name: string, template: string): { root: SNode; nodes: SN
     }
     const result = parseNode(remaining)
     if (!rootResult) rootResult = result
-    remaining = result.remaining
-    if (remaining.trim().length === 0) break
+    remaining = result.remaining.trim()
+    if (remaining.length === 0) break
   }
 
   if (!rootResult) error('no root element found')
-  if (rootResult.remaining.length > 0) error('extra content after root element')
 
   const root = rootResult.node
 
@@ -461,313 +513,18 @@ function createScriptFactory(script: unknown): (() => unknown) | null {
   return null
 }
 
-function createRenderContext(state: Record<string, any>, slots: Slot[]): RenderContext {
-  return {
-    state,
-    slots,
-    nodeCache: new Map(),
-    listElements: new Map()
-  }
-}
-
-function cloneStaticNode(node: SNode): Element {
-  const element = document.createElement(node.tag) as HTMLElement
-  element.dataset.yqNodeId = node.id.toString()
-  
-  for (const [attr, value] of Object.entries(node.staticAttrs)) {
-    element.setAttribute(attr, value)
-  }
-  
-  for (const [attr, parts] of Object.entries(node.dynAttrs)) {
-    let currentValue: string = ''
-    for (const part of parts) {
-      if ('path' in part && Array.isArray(part.path)) {
-        currentValue += '{{' + part.path.join('.') + '}}'
-      } else if ('static' in part) {
-        currentValue += part.static
-      }
-    }
-    element.setAttribute(attr, currentValue)
-  }
-  
-  element.textContent = ''
-  for (const part of node.text) {
-    if ('path' in part && Array.isArray(part.path)) {
-      element.textContent += '{{' + part.path.join('.') + '}}'
-    } else if ('static' in part) {
-      element.textContent += part.static
-    }
-  }
-  
-  for (const child of node.children) {
-    element.appendChild(cloneStaticNode(child))
-  }
-  
-  return element
-}
-
-function resolvePath(state: Record<string, any>, path?: string[]): any {
-  if (!path || path.length === 0) return undefined
-  let current = state
-  for (const segment of path) {
-    if (current && typeof current === 'object' && segment in current) {
-      current = current[segment]
-    } else {
-      return undefined
-    }
-  }
-  return current
-}
-
-function fillTextSlot(node: Element, slot: Extract<Slot, { kind: 'text' }>, context: RenderContext): void {
-  const parts = node.textContent?.split('') || []
-  let currentText = ''
-  
-  for (let i = 0; i < parts.length; i++) {
-    if (i === slot.partIndex) {
-      const value = slot.path ? resolvePath(context.state, slot.path) : undefined
-      currentText += String(value)
-    }
-    currentText += parts[i]
-  }
-  
-  (node as HTMLElement).textContent = currentText
-}
-
-function fillAttrSlot(node: Element, slot: Extract<Slot, { kind: 'attr' }>, context: RenderContext): void {
-  const value = slot.path ? resolvePath(context.state, slot.path) : undefined
-  if (value != null) {
-    node.setAttribute(slot.attr, String(value))
-  }
-}
-
-function fillBoolSlot(node: Element, slot: Extract<Slot, { kind: 'bool' }>, context: RenderContext): void {
-  const value = slot.path ? resolvePath(context.state, slot.path) : undefined
-  if (value) {
-    node.setAttribute(slot.attr, '')
-  } else {
-    node.removeAttribute(slot.attr)
-  }
-}
-
-function createListItem(cdo: Cdo, slot: Extract<Slot, { kind: 'list' }>, item: any, index: number, context: RenderContext): Element {
-  const fragment = document.createDocumentFragment()
-  const itemState = { ...context.state, [slot.itemVar]: item }
-  const itemContext = { ...context, state: itemState }
-  
-  const itemElement = cloneStaticNode(cdo.root)
-  fragment.appendChild(itemElement)
-  
-  for (const childSlot of cdo.slots) {
-    if (childSlot.kind === 'text' && childSlot.nodeId === cdo.root.id) {
-      fillTextSlot(itemElement, childSlot, itemContext)
-    } else if (childSlot.kind === 'attr' && childSlot.nodeId === cdo.root.id) {
-      fillAttrSlot(itemElement, childSlot, itemContext)
-    } else if (childSlot.kind === 'bool' && childSlot.nodeId === cdo.root.id) {
-      fillBoolSlot(itemElement, childSlot, itemContext)
-    }
-  }
-  
-  return fragment.firstChild as Element
-}
-
-function fillListSlot(node: Element, slot: Extract<Slot, { kind: 'list' }>, context: RenderContext, cdo: Cdo): void {
-  const items = resolvePath(context.state, slot.itemsPath) || []
-  const fragment = document.createDocumentFragment()
-  const existingElements = Array.from(node.children)
-  
-  for (let i = 0; i < items.length; i++) {
-    const item = items[i]
-    const key = slot.keyProp ? String(item[slot.keyProp]) : String(i)
-    const existingElement = existingElements.find(el => (el as HTMLElement).dataset.yqKey === String(key))
-    
-    if (existingElement) {
-      const itemElement = existingElement.cloneNode(true) as HTMLElement
-      itemElement.dataset.yqKey = String(key)
-      fragment.appendChild(itemElement)
-    } else {
-      const itemElement = createListItem(cdo, slot, item, i, context) as HTMLElement
-      itemElement.dataset.yqKey = String(key)
-      fragment.appendChild(itemElement)
-    }
-  }
-  
-  node.innerHTML = ''
-  node.appendChild(fragment)
-}
-
-function renderSkeleton(cdo: Cdo, container: HTMLElement): Element {
-  const fragment = document.createDocumentFragment()
-  const root = cloneStaticNode(cdo.root)
-  
-  const options: ScoperOptions = {
-    scopeId: cdo.scopeId,
-    useShadowDOM: false
-  }
-  
-  const scopedRoot = scoper.createScopedElement(root as HTMLElement, cdo.scopeId, options)
-  fragment.appendChild(scopedRoot)
-  container.appendChild(fragment)
-  
-  if (cdo.styleText) {
-    scoper.injectStyle(cdo.styleText, cdo.scopeId)
-  }
-  
-  return scopedRoot
-}
-
-function populateNodeCache(cdo: Cdo, root: Element): Map<number, Element> {
-  const nodeCache = new Map<number, Element>()
-  
-  function traverse(element: Element): void {
-    const dataset = (element as HTMLElement).dataset
-    if (dataset && 'yqNodeId' in dataset) {
-      const nodeId = parseInt(dataset.yqNodeId || '0')
-      nodeCache.set(nodeId, element)
-    }
-    
-    for (const child of Array.from(element.children)) {
-      traverse(child)
-    }
-  }
-  
-  traverse(root)
-  return nodeCache
-}
-
-function fillSlots(cdo: Cdo, context: RenderContext): void {
-  const cache = new Map<number, Element>()
-  
-  function traverse(element: Element): void {
-    if ((element as HTMLElement).dataset.yqNodeId) {
-      const nodeId = parseInt((element as HTMLElement).dataset.yqNodeId || '0')
-      cache.set(nodeId, element)
-    }
-    
-    for (const child of Array.from(element.children)) {
-      traverse(child)
-    }
-  }
-  
-  const rootNode = context.nodeCache.get(cdo.root.id)
-  
-  if (!rootNode) {
-    console.error('Root node not found in cache for ID:', cdo.root.id)
-    console.error('Available node IDs:', Array.from(context.nodeCache.keys()))
-    return
-  }
-  
-  traverse(rootNode)
-  
-  for (const slot of cdo.slots) {
-    const node = cache.get(slot.nodeId)
-    if (!node) continue
-    
-    if (slot.kind === 'text') {
-      fillTextSlot(node, slot, context)
-    } else if (slot.kind === 'attr') {
-      fillAttrSlot(node, slot, context)
-    } else if (slot.kind === 'bool') {
-      fillBoolSlot(node, slot, context)
-    } else if (slot.kind === 'list') {
-      fillListSlot(node, slot, context, cdo)
-    }
-  }
-}
-
-function updateSlots(cdo: Cdo, context: RenderContext): void {
-  const cache = new Map<number, Element>()
-  
-  function traverse(element: Element): void {
-    if ((element as HTMLElement).dataset.yqNodeId) {
-      const nodeId = parseInt((element as HTMLElement).dataset.yqNodeId || '0')
-      cache.set(nodeId, element)
-    }
-    
-    for (const child of Array.from(element.children)) {
-      traverse(child)
-    }
-  }
-  
-  traverse(context.nodeCache.get(cdo.root.id) || cdo.root.tag === document.body.tagName ? document.body : context.nodeCache.get(0)!)
-  
-  for (const slot of cdo.slots) {
-    const node = cache.get(slot.nodeId)
-    if (!node) continue
-    
-    if (slot.kind === 'text') {
-      const parts = node.textContent?.split('') || []
-      let currentText = ''
-      let needsUpdate = false
-      
-      for (let i = 0; i < parts.length; i++) {
-        if (i === slot.partIndex) {
-          const value = slot.path ? resolvePath(context.state, slot.path) : undefined
-          const newValue = String(value)
-          if (currentText.length > 0 || parts[i] !== newValue) {
-            needsUpdate = true
-          }
-          currentText += newValue
-        } else {
-          currentText += parts[i]
-        }
-      }
-      
-      if (needsUpdate) {
-        (node as HTMLElement).textContent = currentText
-      }
-    } else if (slot.kind === 'attr') {
-      const value = slot.path ? resolvePath(context.state, slot.path) : undefined
-      if (value != null) {
-        node.setAttribute(slot.attr, String(value))
-      } else {
-        node.removeAttribute(slot.attr)
-      }
-    } else if (slot.kind === 'bool') {
-      const value = slot.path ? resolvePath(context.state, slot.path) : undefined
-      if (value) {
-        node.setAttribute(slot.attr, '')
-      } else {
-        node.removeAttribute(slot.attr)
-      }
-    } else if (slot.kind === 'list') {
-      const items = resolvePath(context.state, slot.itemsPath) || []
-      const fragment = document.createDocumentFragment()
-      const existingElements = Array.from(node.children)
-      
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i]
-        const key = slot.keyProp ? String(item[slot.keyProp]) : String(i)
-        const existingElement = existingElements.find(el => (el as HTMLElement).dataset.yqKey === String(key))
-        
-        if (existingElement) {
-          const itemElement = existingElement.cloneNode(true) as HTMLElement
-          itemElement.dataset.yqKey = String(key)
-          fragment.appendChild(itemElement)
-        } else {
-          const itemElement = createListItem(cdo, slot, item, i, context) as HTMLElement
-          itemElement.dataset.yqKey = String(key)
-          fragment.appendChild(itemElement)
-        }
-      }
-      
-      if (node.children.length !== items.length) {
-        node.innerHTML = ''
-        node.appendChild(fragment)
-      }
-    }
-  }
-}
+import { renderSkeleton, populateNodeCache, fillSlots, updateSlots, createComponent, mountComponent, updateComponent, unmountComponent, scoper, withErrorBoundary, getErrorBoundaryInfo, resetErrorBoundary, generateScopedCSS, injectStyle, removeStyle, updateTheme, getThemeVariables, resetTheme, addGlobalStyle, removeGlobalStyle, getGlobalStyles, clearGlobalStyles, createScopedElement } from './renderer.js'
 
 let effectStack: Effect[] = []
-let batchDepth = 0
+let allEffects: Effect[] = []
+let allDeriveds: any[] = []
 let batchQueue: Array<() => void> = []
 let isFlushing = false
+let flushScheduled = false
 
 function flushBatchQueue(): void {
   if (isFlushing) return
   isFlushing = true
-  
   try {
     while (batchQueue.length > 0) {
       const job = batchQueue.shift()
@@ -775,13 +532,16 @@ function flushBatchQueue(): void {
     }
   } finally {
     isFlushing = false
-    batchDepth = 0
   }
 }
 
 function scheduleFlush(): void {
-  if (!isFlushing && batchQueue.length > 0) {
-    Promise.resolve().then(flushBatchQueue)
+  if (!flushScheduled) {
+    flushScheduled = true
+    Promise.resolve().then(() => {
+      flushScheduled = false
+      flushBatchQueue()
+    })
   }
 }
 
@@ -795,73 +555,47 @@ function trackState<T>(state: State<T>): void {
 }
 
 function triggerState(state: State<any>): void {
-  if (batchDepth > 0) {
-    batchQueue.push(() => {
-      const dependents = new Set<Effect>()
-      
-      function collectDependents(effect: Effect): void {
-        for (const dep of effect.dependencies) {
-          if (dep === state) {
-            dependents.add(effect)
-          }
-        }
-      }
-      
-      for (const effect of effectStack) {
-        collectDependents(effect)
-      }
-      
-      for (const effect of dependents) {
-        if (effect.dirty !== true) {
-          effect.dirty = true
-          effectStack.push(effect)
-          try {
-            effect.fn()
-          } finally {
-            effectStack.pop()
-            effect.dirty = false
-          }
-        }
-      }
-    })
-  } else {
-    const dependents = new Set<Effect>()
-    
-    function collectDependents(effect: Effect): void {
-      for (const dep of effect.dependencies) {
-        if (dep === state) {
-          dependents.add(effect)
-        }
-      }
+  const dirtyDeriveds: any[] = []
+  for (const derivedObj of allDeriveds) {
+    if (derivedObj.dependencies.includes(state)) {
+      derivedObj.dirty = true
+      dirtyDeriveds.push(derivedObj)
     }
-    
-    for (const effect of effectStack) {
-      collectDependents(effect)
-    }
-    
-    for (const effect of dependents) {
-      if (effect.dirty !== true) {
-        effect.dirty = true
-        effectStack.push(effect)
-        try {
-          effect.fn()
-        } finally {
-          effectStack.pop()
-          effect.dirty = false
-        }
+  }
+  let queue = [...dirtyDeriveds]
+  while (queue.length > 0) {
+    const dirtyDerived = queue.shift()!
+    for (const derivedObj of allDeriveds) {
+      if (!derivedObj.dirty && derivedObj.dependencies.includes(dirtyDerived)) {
+        derivedObj.dirty = true
+        queue.push(derivedObj)
       }
     }
   }
-  
-  if (batchDepth === 0) {
-    scheduleFlush()
+  const allDirty = new Set<State<any>>([state, ...dirtyDeriveds])
+  const pending = new Set<Effect>()
+  for (const effect of allEffects) {
+    for (const dep of effect.dependencies) {
+      if (allDirty.has(dep)) {
+        pending.add(effect)
+        break
+      }
+    }
   }
+  if (pending.size === 0) return
+  for (const effect of pending) {
+    const alreadyQueued = batchQueue.some(job => (job as any)._effect === effect)
+    if (!alreadyQueued) {
+      const job = () => { effect.fn() }
+      ;(job as any)._effect = effect
+      batchQueue.push(job)
+    }
+  }
+  scheduleFlush()
 }
 
 function state<T>(initialValue: T, componentName?: string): State<T> {
   let value = initialValue
-  const dependents: Effect[] = []
-  
   const stateObj: State<T> = {
     get value(): T {
       trackState(stateObj)
@@ -871,7 +605,6 @@ function state<T>(initialValue: T, componentName?: string): State<T> {
       if (value !== newValue) {
         value = newValue
         triggerState(stateObj)
-        
         if (componentName) {
           const debugManager = getDebugManager()
           debugManager.logEvent({
@@ -889,52 +622,61 @@ function state<T>(initialValue: T, componentName?: string): State<T> {
       }
     },
     dispose(): void {
-      dependents.length = 0
     }
   }
-  
   return stateObj
 }
 
 function derived<T>(computeFn: () => T): Derived<T> {
   let cachedValue: T | undefined
-  let dirty = true
   const dependencies: State<any>[] = []
-  
-  const derivedObj: Derived<T> = {
+  const derivedObj: Derived<T> & { dirty: boolean; computing: boolean } = {
+    dirty: true,
+    computing: false,
     get value(): T {
-      if (dirty) {
+      if (this.computing) {
+        throw new Error('Circular dependency detected')
+      }
+      if (this.dirty) {
+        this.computing = true
         effectStack.push({ fn: () => {}, dependencies: [] })
         try {
           cachedValue = computeFn()
-          dirty = false
+          this.dirty = false
         } finally {
           const currentEffect = effectStack.pop()
           if (currentEffect) {
             dependencies.length = 0
             dependencies.push(...currentEffect.dependencies)
           }
+          this.computing = false
         }
       }
-      
       trackState(derivedObj)
       return cachedValue!
     },
     dispose(): void {
+      const idx = allDeriveds.indexOf(derivedObj as any)
+      if (idx > -1) allDeriveds.splice(idx, 1)
       dependencies.length = 0
     },
     dependencies
   }
-  
+  allDeriveds.push(derivedObj as any)
   return derivedObj
 }
 
 function effect(fn: () => void | (() => void), componentName?: string): () => void {
   const dependencies: State<any>[] = []
   let cleanup: (() => void) | null = null
-  
+  const effectObj: Effect = { fn: () => {}, dependencies, dirty: false }
+  let prevStart = 0
+  let prevEnd = 0
   function wrappedFn(): void {
-    effectStack.push({ fn: wrappedFn, dependencies, dirty: false })
+    while (allEffects.length > prevStart) {
+      allEffects.pop()
+    }
+    effectStack.push(effectObj)
     try {
       const result = fn()
       if (typeof result === 'function') {
@@ -943,16 +685,21 @@ function effect(fn: () => void | (() => void), componentName?: string): () => vo
     } finally {
       effectStack.pop()
     }
+    prevStart = prevEnd
+    prevEnd = allEffects.length
   }
-  
+  effectObj.fn = wrappedFn
+  allEffects.push(effectObj)
+  prevStart = allEffects.length
+  prevEnd = allEffects.length
   wrappedFn()
-  
   if (componentName) {
     const debugManager = getDebugManager()
     debugManager.trackEffect(componentName)
   }
-  
   return () => {
+    const idx = allEffects.indexOf(effectObj)
+    if (idx > -1) allEffects.splice(idx, 1)
     if (cleanup) {
       cleanup()
       cleanup = null
@@ -960,22 +707,33 @@ function effect(fn: () => void | (() => void), componentName?: string): () => vo
   }
 }
 
+function resetReactiveState(): void {
+  allEffects.length = 0
+  allDeriveds.length = 0
+  batchQueue.length = 0
+  effectStack.length = 0
+  isFlushing = false
+  flushScheduled = false
+}
+
 function dumpReactiveState(): { states: any[]; effects: any[] } {
   const states: any[] = []
   const effects: any[] = []
-  
-  function collectStates(): void {
-    for (const effect of effectStack) {
-      for (const state of effect.dependencies) {
-        if (!states.includes(state)) {
-          states.push(state)
-        }
+  for (const effect of allEffects) {
+    effects.push({ dependencies: effect.dependencies.map(d => d.value) })
+    for (const dep of effect.dependencies) {
+      if (!states.includes(dep)) {
+        states.push(dep)
       }
     }
   }
-  
-  collectStates()
-  
+  for (const derivedObj of allDeriveds) {
+    for (const dep of derivedObj.dependencies) {
+      if (!states.includes(dep)) {
+        states.push(dep)
+      }
+    }
+  }
   return { states, effects }
 }
 
@@ -1029,414 +787,8 @@ function lookup(name: string): { name: string; cdo: Cdo } | undefined {
   return { name, cdo: definition.cdo! }
 }
 
-function createComponent(options: ComponentOptions): ComponentInstance {
-  const { name, template, script, container = document.body } = options
-  const parsed = parseTemplate(name, template)
-  const scopeId = generateScopeId()
-  const cdo: Cdo = {
-    name,
-    root: parsed.root,
-    nodes: parsed.nodes,
-    styleText: '',
-    scriptFactory: script ? (() => script) : null,
-    slots: parsed.slots,
-    scopeId
-  }
-  const state: Record<string, any> = {}
-  const derivedStates: Record<string, any> = {}
-  const effects: (() => void)[] = []
-  const context = createRenderContext(state, cdo.slots)
-  const root = renderSkeleton(cdo, container)
-  
-  context.nodeCache = populateNodeCache(cdo, root)
-  
-  const debugManager = getDebugManager()
-  const instance: ComponentInstance = { 
-    name, 
-    state, 
-    derivedStates, 
-    effects, 
-    context, 
-    cdo, 
-    container, 
-    root,
-    lifecycleHooks: {},
-    lifecycleState: 'created',
-    children: [],
-    parent: null,
-    updateLogs: [],
-    errorInfo: null,
-    errorBoundary: null,
-    hasError: false,
-    errorCount: 0,
-    lastErrorTime: null
-  }
-  
-  debugManager.trackComponent(instance)
-  
-  return instance
-}
-
-function mountComponent(instance: ComponentInstance): void {
-  if (instance.lifecycleState !== 'created') {
-    console.warn(`[yq:lifecycle] Component ${instance.name} is already mounted`)
-    return
-  }
-  
-  try {
-    fillSlots(instance.cdo, instance.context)
-    
-    if (instance.cdo.scriptFactory) {
-      const scriptFn = instance.cdo.scriptFactory()
-      if (typeof scriptFn === 'function') {
-        scriptFn()
-      }
-    }
-    
-    instance.lifecycleState = 'mounted'
-    
-    if (instance.lifecycleHooks.onMount) {
-      instance.lifecycleHooks.onMount()
-    }
-    
-    instance.updateLogs.push({
-      timestamp: Date.now(),
-      type: 'effect',
-      path: 'mount'
-    })
-    
-    const debugManager = getDebugManager()
-    debugManager.logEvent({
-      timestamp: Date.now(),
-      type: 'mount',
-      componentName: instance.name,
-      data: { timestamp: Date.now() }
-    })
-  } catch (error) {
-    instance.hasError = true
-    instance.errorCount++
-    instance.lastErrorTime = Date.now()
-    
-    instance.errorInfo = {
-      hasError: true,
-      error: error as Error,
-      timestamp: Date.now()
-    }
-    
-    console.error(`[yq:lifecycle] Component ${instance.name} mount failed:`, error)
-    
-    const debugManager = getDebugManager()
-    debugManager.trackError(instance, error as Error, (error as Error).stack)
-    
-    if (instance.errorBoundary) {
-      instance.errorBoundary.componentDidCatch(error as Error, {
-        componentStack: `Component: ${instance.name}`,
-        hasError: true,
-        timestamp: Date.now(),
-        error: error as Error
-      })
-    }
-  }
-}
-
-function updateComponent(instance: ComponentInstance): void {
-  if (instance.lifecycleState === 'unmounted') {
-    console.warn(`[yq:lifecycle] Component ${instance.name} is already unmounted`)
-    return
-  }
-  
-  try {
-    if (instance.context.nodeCache.size === 0) {
-      instance.context.nodeCache = populateNodeCache(instance.cdo, instance.root)
-    }
-    
-    updateSlots(instance.cdo, instance.context)
-    
-    instance.lifecycleState = 'updated'
-    
-    if (instance.lifecycleHooks.onUpdate) {
-      instance.lifecycleHooks.onUpdate()
-    }
-    
-    instance.updateLogs.push({
-      timestamp: Date.now(),
-      type: 'effect',
-      path: 'update'
-    })
-    
-    const debugManager = getDebugManager()
-    debugManager.logEvent({
-      timestamp: Date.now(),
-      type: 'update',
-      componentName: instance.name,
-      data: { timestamp: Date.now() }
-    })
-  } catch (error) {
-    instance.hasError = true
-    instance.errorCount++
-    instance.lastErrorTime = Date.now()
-    
-    instance.errorInfo = {
-      hasError: true,
-      error: error as Error,
-      timestamp: Date.now()
-    }
-    console.error(`[yq:lifecycle] Component ${instance.name} update failed:`, error)
-    
-    const debugManager = getDebugManager()
-    debugManager.trackError(instance, error as Error, (error as Error).stack)
-    
-    if (instance.errorBoundary) {
-      instance.errorBoundary.componentDidCatch(error as Error, {
-        componentStack: `Component: ${instance.name}`,
-        hasError: true,
-        timestamp: Date.now(),
-        error: error as Error
-      })
-    }
-  }
-}
-
-function unmountComponent(instance: ComponentInstance): void {
-  if (instance.lifecycleState === 'unmounted') {
-    console.warn(`[yq:lifecycle] Component ${instance.name} is already unmounted`)
-    return
-  }
-  
-  try {
-    for (const child of instance.children) {
-      unmountComponent(child)
-    }
-    instance.children.length = 0
-    
-    instance.container.innerHTML = ''
-    
-    const styleElements = document.querySelectorAll(`style[data-yq-scope-id="${instance.cdo.scopeId}"]`)
-    styleElements.forEach(element => {
-      const injectionId = element.getAttribute('data-yq-style-id')
-      if (injectionId) {
-        const injection = styleInjections.get(injectionId)
-        if (injection) {
-          scoper.removeStyle(injection)
-        }
-      }
-    })
-    
-    for (const effect of instance.effects) {
-      effect()
-    }
-    instance.effects.length = 0
-    
-    instance.lifecycleState = 'unmounted'
-    
-    if (instance.lifecycleHooks.onUnmount) {
-      instance.lifecycleHooks.onUnmount()
-    }
-    
-    if (instance.parent) {
-      const index = instance.parent.children.indexOf(instance)
-      if (index > -1) {
-        instance.parent.children.splice(index, 1)
-      }
-    }
-    
-    instance.updateLogs.push({
-      timestamp: Date.now(),
-      type: 'effect',
-      path: 'unmount'
-    })
-    
-    const debugManager = getDebugManager()
-    debugManager.logEvent({
-      timestamp: Date.now(),
-      type: 'unmount',
-      componentName: instance.name,
-      data: { timestamp: Date.now() }
-    })
-    
-    if (instance.errorBoundary) {
-      instance.errorBoundary.destroy()
-      instance.errorBoundary = null
-    }
-    
-    instance.errorInfo = null
-    instance.hasError = false
-    instance.errorCount = 0
-    instance.lastErrorTime = null
-  } catch (error) {
-    console.error(`[yq:lifecycle] Component ${instance.name} unmount failed:`, error)
-    
-    const debugManager = getDebugManager()
-    debugManager.trackError(instance, error as Error, (error as Error).stack)
-  }
-}
-
-const styleInjections = new Map<string, StyleInjection>()
-const themeVariables = new Map<string, string>()
-const globalStyles = new Map<string, string>()
-
 function generateScopeId(): string {
   return `yq-scope-${Math.random().toString(36).substr(2, 9)}`
-}
-
-function generateScopedCSS(cssText: string, scopeId: string): string {
-  if (!cssText.trim()) return ''
-  
-  const scopeAttr = `data-yq-scope="${scopeId}"`
-  
-  const scopedCSS = cssText
-    .replace(/([^{}]+)(?=[,{])/g, (selector) => {
-      if (selector.trim().startsWith('*')) {
-        return selector
-      }
-      
-      if (selector.includes(':') || selector.includes('::')) {
-        return selector
-      }
-      
-      const trimmedSelector = selector.trim()
-      if (trimmedSelector) {
-        return `${trimmedSelector}[${scopeAttr}]`
-      }
-      return selector
-    })
-    .replace(/([{}])/g, (match) => {
-      return match
-    })
-  
-  return scopedCSS
-}
-
-function injectStyle(cssText: string, scopeId: string): StyleInjection {
-  const id = `${scopeId}-${cssText.length}-${Date.now()}`
-  
-  const existing = styleInjections.get(id)
-  if (existing) {
-    existing.references++
-    return existing
-  }
-  
-  const scopedCSS = generateScopedCSS(cssText, scopeId)
-  
-  const styleElement = document.createElement('style')
-  styleElement.textContent = scopedCSS
-  styleElement.setAttribute('data-yq-scope-id', scopeId)
-  styleElement.setAttribute('data-yq-style-id', id)
-  
-  document.head.appendChild(styleElement)
-  
-  const injection: StyleInjection = {
-    id,
-    cssText: scopedCSS,
-    scopeId,
-    references: 1,
-    element: styleElement
-  }
-  
-  styleInjections.set(id, injection)
-  return injection
-}
-
-function removeStyle(injection: StyleInjection): void {
-  injection.references--
-  
-  if (injection.references <= 0) {
-    if (injection.element) {
-      injection.element.remove()
-    }
-    styleInjections.delete(injection.id)
-  }
-}
-
-function updateTheme(themeVars: Record<string, string>): void {
-  for (const [key, value] of Object.entries(themeVars)) {
-    themeVariables.set(key, value)
-  }
-  
-  for (const [key, value] of Object.entries(themeVars)) {
-    document.documentElement.style.setProperty(`--yq-${key}`, value)
-  }
-}
-
-function getThemeVariables(): Record<string, string> {
-  const result: Record<string, string> = {}
-  for (const [key, value] of themeVariables) {
-    result[key] = value
-  }
-  return result
-}
-
-function resetTheme(): void {
-  const defaultTheme = {
-    'primary-color': '#3b82f6',
-    'secondary-color': '#6b7280',
-    'background-color': '#ffffff',
-    'text-color': '#1f2937',
-    'border-color': '#e5e7eb',
-    'shadow-color': 'rgba(0, 0, 0, 0.1)'
-  }
-  
-  themeVariables.clear()
-  updateTheme(defaultTheme)
-}
-
-function addGlobalStyle(cssText: string, id?: string): string {
-  const styleId = id || `global-${Date.now()}`
-  globalStyles.set(styleId, cssText)
-  
-  const styleElement = document.createElement('style')
-  styleElement.textContent = cssText
-  styleElement.setAttribute('data-yq-global-style', styleId)
-  document.head.appendChild(styleElement)
-  
-  return styleId
-}
-
-function removeGlobalStyle(id: string): void {
-  const cssText = globalStyles.get(id)
-  if (cssText) {
-    globalStyles.delete(id)
-    const styleElements = document.querySelectorAll(`style[data-yq-global-style="${id}"]`)
-    styleElements.forEach(element => element.remove())
-  }
-}
-
-function getGlobalStyles(): Record<string, string> {
-  const result: Record<string, string> = {}
-  for (const [id, cssText] of globalStyles) {
-    result[id] = cssText
-  }
-  return result
-}
-
-function clearGlobalStyles(): void {
-  globalStyles.clear()
-  const styleElements = document.querySelectorAll('style[data-yq-global-style]')
-  styleElements.forEach(element => element.remove())
-}
-
-function createScopedElement(element: HTMLElement, scopeId: string, options?: ScoperOptions): HTMLElement {
-  if (options?.useShadowDOM) {
-    const shadowRoot = element.attachShadow({ mode: 'open' })
-    const scopedElement = element.cloneNode(true) as HTMLElement
-    shadowRoot.appendChild(scopedElement)
-    
-    const allElements = shadowRoot.querySelectorAll('*')
-    allElements.forEach(el => {
-      if (el && typeof el.setAttribute === 'function') {
-        el.setAttribute('data-yq-scope', scopeId)
-      }
-    })
-    
-    return element
-  } else {
-    const scopedElement = element.cloneNode(true) as HTMLElement
-    if (element.dataset.yqNodeId) {
-      scopedElement.dataset.yqNodeId = element.dataset.yqNodeId
-    }
-    scopedElement.setAttribute('data-yq-scope', scopeId)
-    return scopedElement
-  }
 }
 
 function setLifecycleHooks(instance: ComponentInstance, hooks: LifecycleHooks): void {
@@ -1471,77 +823,20 @@ function getStateSnapshot(instance: ComponentInstance): Record<string, any> {
   }
 }
 
-const scoper: Scoper = {
-  generateScopedCSS,
-  injectStyle,
-  removeStyle,
-  updateTheme,
-  getThemeVariables,
-  resetTheme,
-  createScopedElement,
-  addGlobalStyle,
-  removeGlobalStyle,
-  getGlobalStyles,
-  clearGlobalStyles
-}
-
-function withErrorBoundary(componentName: string, fallback?: (error: Error, errorInfo: any) => any): (instance: ComponentInstance) => ComponentInstance {
-  return (instance: ComponentInstance): ComponentInstance => {
-    const errorBoundary = new ErrorBoundary({
-      fallback: fallback || ((error: Error, errorInfo: any) => {
-        return `<div style="padding: 20px; border: 1px solid #ff4757; border-radius: 4px; background-color: #fff5f5; color: #842029;">
-          <h3>⚠️ Component Error</h3>
-          <p><strong>Component:</strong> ${componentName}</p>
-          <p><strong>Error:</strong> ${error.message}</p>
-          <button onclick="this.closest('.error-boundary').reset()">Retry</button>
-        </div>`
-      }),
-      onError: (error: Error, errorInfo: any) => {
-        console.error(`[ErrorBoundary] ${componentName}:`, error)
-      }
-    })
-    
-    instance.errorBoundary = errorBoundary
-    return instance
-  }
-}
-
-function getErrorBoundaryInfo(instance: ComponentInstance): any {
-  if (!instance.errorBoundary) {
-    return null
-  }
-  
-  return {
-    hasError: instance.hasError,
-    errorCount: instance.errorCount,
-    lastErrorTime: instance.lastErrorTime,
-    errorInfo: instance.errorInfo
-  }
-}
-
-function resetErrorBoundary(instance: ComponentInstance): void {
-  if (instance.errorBoundary) {
-    instance.errorBoundary.reset()
-    instance.hasError = false
-    instance.errorCount = 0
-    instance.lastErrorTime = null
-    instance.errorInfo = null
-  }
-}
-
 export { 
+  generateScopeId,
   define, 
   lookup, 
   parseTemplate, 
   createScriptFactory, 
-  createRenderContext, 
   renderSkeleton, 
   fillSlots, 
   updateSlots, 
   state, 
   derived, 
   effect, 
-  dumpReactiveState, 
+  dumpReactiveState,
+  resetReactiveState,
   createComponent, 
   mountComponent, 
   updateComponent, 
@@ -1552,10 +847,6 @@ export {
   getUpdateLogs,
   getStateSnapshot,
   scoper,
-  DebugPanel,
-  type DebugPanelOptions,
-  DebugManager,
-  type DebugManagerOptions,
   ErrorBoundary,
   withErrorBoundary,
   getErrorBoundaryInfo,
