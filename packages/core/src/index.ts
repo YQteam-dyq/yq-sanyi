@@ -1,4 +1,4 @@
-export const version = '0.0.0'
+export const version = '0.1.0'
 
 import { DebugPanel, DebugPanelOptions } from './debug-panel.js'
 import { DebugManager, DebugManagerOptions, getDebugManager } from './debug-manager-simple.js'

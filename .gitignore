@@ -13,3 +13,9 @@ test-*.mjs
 test-*.cjs
 test-*.js
 final-test.html
+
+docs/plans/
+docs/decisions/
+docs/spec/
+docs/full-demo-documentation.md
+docs/index.md
