@@ -1,0 +1,27 @@
+{
+  "name": "yq-sanyi",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "yq-sanyi: zero-dependency trinity web framework monorepo",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "esbuild packages/core/src/index.ts --bundle --format=esm --target=es2019 --outfile=packages/core/dist/core.mjs && esbuild packages/core/src/index.ts --bundle --format=iife --global-name=yq --target=es2019 --outfile=packages/core/dist/core.global.js",
+    "typecheck": "tsc --noEmit",
+    "pretest": "npm run build",
+    "test": "node --test packages/core/test/",
+    "bench": "node bench/bench.mjs",
+    "check:all": "node scripts/check-deps.mjs && node scripts/check-gzip.mjs && node scripts/check-no-comments.mjs",
+    "ci:all": "npm run build && npm run typecheck && npm run test && npm run bench && npm run check:all",
+    "serve": "node scripts/serve.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.5",
+    "typescript": "^5.8.3"
+  },
+  "engines": {
+    "node": ">=18.17"
+  }
+}

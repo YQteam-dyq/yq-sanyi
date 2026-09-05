@@ -1,0 +1,14 @@
+{
+  "name": "yq-sanyi-devtools",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "yq-sanyi devtools: component tree, state snapshot and update log panel",
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ]
+}
