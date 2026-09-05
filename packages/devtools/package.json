@@ -4,11 +4,11 @@
   "private": true,
   "type": "module",
   "description": "yq-sanyi devtools: component tree, state snapshot and update log panel",
-  "main": "src/index.ts",
+  "main": "dist/devtools.mjs",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./dist/devtools.mjs"
   },
   "files": [
-    "src"
+    "dist"
   ]
 }

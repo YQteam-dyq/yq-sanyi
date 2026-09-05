@@ -23,9 +23,11 @@ const mockElement = {
     return { 
       tagName: 'div', 
       cloneNode: () => ({ tagName: 'div' }),
-      setAttribute: (key, value) => {}
+      setAttribute: (key, value) => {},
+      dataset: {}
     }
-  }
+  },
+  dataset: {}
 }
 
 const mockDocument = {
@@ -33,7 +35,8 @@ const mockDocument = {
     tagName,
     textContent: '',
     setAttribute: (key, value) => {},
-    remove: () => {}
+    remove: () => {},
+    dataset: {}
   }),
   head: {
     appendChild: (element) => {}
@@ -58,8 +61,10 @@ console.log('\nTest 1: Create scoped element without Shadow DOM')
 const element1 = {
   cloneNode: (deep) => ({
     tagName: 'div',
-    setAttribute: (key, value) => {}
-  })
+    setAttribute: (key, value) => {},
+    dataset: {}
+  }),
+  dataset: {}
 }
 const scopedElement1 = scoper.createScopedElement(element1, 'scope-1')
 console.log('✓ Regular scoped element created')

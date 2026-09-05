@@ -5,17 +5,69 @@ import { define, createComponent, mountComponent, updateComponent, unmountCompon
 
 
 const mockDOM = {
-  createElement: (tag) => ({
-    tagName: tag.toUpperCase(),
-    setAttribute: (name, value) => {},
-    removeAttribute: (name) => {},
-    appendChild: (child) => {},
-    removeChild: (child) => {},
-    cloneNode: (deep) => ({ ...mockDOM.createElement('div') })
-  }),
+  createElement: (tag) => {
+    const element = {
+      tagName: tag.toUpperCase(),
+      setAttribute: (name, value) => { element.attrs = element.attrs || {}; element.attrs[name] = value },
+      getAttribute: (name) => element.attrs ? element.attrs[name] || null : null,
+      removeAttribute: (name) => { delete element.attrs[name] },
+      appendChild: (child) => {
+        element.children = element.children || [];
+        if (child.children && child.tagName === undefined) {
+          for (const c of child.children) {
+            if (c) element.children.push(c);
+          }
+        } else {
+          element.children.push(child);
+        }
+        child.parentElement = element;
+      },
+      removeChild: (child) => {
+        if (element.children) {
+          const idx = element.children.indexOf(child);
+          if (idx > -1) element.children.splice(idx, 1);
+        }
+      },
+      cloneNode: (deep) => {
+        const clone = mockDOM.createElement(tag.toLowerCase());
+        if (deep && element.children) {
+          clone.children = element.children.map(c => c.cloneNode ? c.cloneNode(true) : c);
+        }
+        return clone;
+      },
+      dataset: {},
+      children: [],
+      querySelector: (sel) => {
+        function findChild(el) {
+          if (el.children) {
+            for (const child of el.children) {
+              if (sel === '[data-yq-scope]' && child.attrs && child.attrs['data-yq-scope']) {
+                return child;
+              }
+              const found = findChild(child);
+              if (found) return found;
+            }
+          }
+          return null;
+        }
+        return findChild(element);
+      },
+      attrs: {},
+      parentElement: null
+    };
+    return element;
+  },
+  createDocumentFragment: () => {
+    const frag = { children: [], appendChild: (child) => { frag.children.push(child); return child; } };
+    return frag;
+  },
   querySelectorAll: (selector) => [],
+  documentElement: { style: { setProperty: () => {}, removeProperty: () => {} } },
   head: {
-    appendChild: (child) => {},
+    appendChild: (child) => {
+      child.remove = () => {};
+      return child;
+    },
     removeChild: (child) => {}
   }
 }
@@ -107,6 +159,10 @@ try {
   console.log('\n--- Test 4: Shadow DOM Integration ---')
   
   const element = mockDOM.createElement('div')
+  element.attachShadow = (options) => {
+    element.shadowRoot = { mode: options.mode, appendChild: () => {}, querySelectorAll: () => [] };
+    return element.shadowRoot;
+  };
   const shadowElement = scoper.createScopedElement(element, 'shadow-test', { useShadowDOM: true })
   
   if (shadowElement.shadowRoot) {
