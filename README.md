@@ -1,103 +1,190 @@
-# yq-sanyi（三一）
+# yq-sanyi 三一
 
-> HTML · CSS · JS — one component, zero dependencies.
->
-> 零依赖 HTML/CSS/JS 三位一体前端框架：模板、样式与行为收敛进同一个组件描述，只站在 Web 标准 API 之上。
+**A zero-dependency, no-build web framework that keeps component structure, behavior and style in one place.**
 
-## What is it
+yq-sanyi (三一, "trinity") is a from-scratch experimental front-end framework. A component is authored as a single element that carries its template, behavior and scoped style together — no JSX, no virtual DOM, no template DSL, and **zero runtime dependencies**. It loads from a plain `<script>` tag and runs on Web-standard APIs only.
 
-**yq-sanyi（三一）is a zero-dependency, HTML/CSS/JS trinity front-end framework.** A component is written once — template, script and styles together — and runs directly in the browser on plain Web standards. No bundler, no virtual-DOM library, no third-party runtime. The Chinese name 三一（sān yī, "three in one"）means exactly that: 三位一体。
+> [简体中文版 README](./README.zh-CN.md) · [English Tutorial](./docs/tutorial.md) · [中文教程](./docs/tutorial.zh-CN.md)
 
-## Core features
+![Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue)
+![version](https://img.shields.io/badge/version-v0.1.0-2ea44f)
+![dependencies](https://img.shields.io/badge/dependencies-zero-brightgreen)
+![runtime](https://img.shields.io/badge/runtime-Web%20Standard%20APIs-orange)
+![code style](https://img.shields.io/badge/code%20style-Y--4%20no%20comments-8250df)
 
-- **Zero-dependency runtime** — 运行时零第三方依赖，只用原生 JS + DOM 等 Web 标准 API。
-- **Trinity authoring** — HTML/CSS/JS 三合一：一个组件 = 声明式模板 + 响应式脚本 + 作用域样式。
-- **Static skeleton + binding slots** — 静态骨架 + 绑定槽位：模板只解析一次，更新时复用静态 DOM，减少操作与回流。
-- **Reactive state** — 内置 `state` / `derived` / `effect`，自动依赖追踪与批量更新，附 `updateComponent` 手动刷新。
-- **Declarative template syntax** — `{{ }}` 文本插值、属性与布尔属性绑定、`yq-for` 列表渲染、`yq-if` 条件渲染、`yq-model` 双向绑定。
-- **Scoped styles** — `packages/scoper` 提供样式隔离（数据属性作用域 / Shadow DOM）、主题变量与全局样式管理。
-- **Modular monorepo** — `packages/core`（核心运行时）、`packages/scoper`（样式作用域）、`packages/devtools`（调试面板），可整体或按模块使用。
-- **Comment-free by convention** — 仓库约定：全部源码与示例（含文档代码块）不写任何注释，行为由自说明命名与文档承载，由 CI 强制校验。
-- **CI guardrails** — 依赖图校验、core gzip 体积钩子、注释检测（`scripts/check-*.mjs`）全部并入 CI。
+---
 
-## Minimal example
+## Why yq-sanyi
 
-A whole page in one file — save it at the repository root next to `packages/`, open it in a browser. No install, no build step:
+Most modern frameworks ask you to adopt a build pipeline, a syntax dialect and a virtual runtime before you can ship anything. yq-sanyi goes the other way:
 
-```html
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<title>yq-sanyi hello</title>
-</head>
-<body>
-<div id="app"></div>
-<script src="packages/core/dist/core.global.js"></script>
-<script>
-const component = window.yq.createComponent({
-  name: 'hello-world',
-  template: '<div><h1>{{ title }}</h1><p>{{ message }}</p></div>',
-  script: () => ({
-    state: {
-      title: 'yq-sanyi',
-      message: 'zero-dependency trinity web framework'
-    }
-  }),
-  container: document.getElementById('app')
-});
-window.yq.mountComponent(component);
-</script>
-</body>
-</html>
-```
+- **Zero dependencies, zero build.** The core ships as one self-contained file. Delete `node_modules` and the demos still run.
+- **One file per component.** Structure, behavior and style share one scope — no cross-file context switching.
+- **Static skeleton + binding slots.** The DOM skeleton is parsed once and cloned on mount; updates touch only dirty slots.
+- **Predictable updates.** Mutation and refresh are explicit: change state, then call `updateComponent`.
 
-中文要点：`packages/core/dist/core.global.js` 是 IIFE 全局产物，加载后通过 `window.yq` 暴露全部 API；`createComponent` 声明组件（`template` 模板 + `script` 返回初始状态），`mountComponent` 完成挂载，模板里的 `{{ }}` 自动绑定响应式状态。
+## Features
+
+- **Trinity component model** — template, script and style defined together and mounted as one component.
+- **True zero dependency** — only Web-standard APIs, enforced by a dependency-graph check.
+- **Reactive state core** — field-level `state`, memoized `derived`, and `effect` with auto cleanup on unmount.
+- **Declarative template** — text `{{ }}`, attribute binding, list `yq-for`, conditional `yq-if` on plain HTML elements.
+- **Lifecycle management** — mount / update / unmount with ordered hooks and leak-free disposal.
+- **Failure isolation** — an error boundary turns a broken component into a placeholder plus a structured warning; the rest of the page keeps working.
+- **Debug panel (dev)** — inspect any running component's state snapshot and recent update log without touching the runtime path.
+- **Scoped styles & themes** — component styles never leak; site-level CSS variables can re-theme components.
+- **Repo-wide no-comment rule (Y-4)** — code, examples and docs code fences stay comment-free; a checker runs in CI.
 
 ## Quick start
 
-Clone the repository and install the dev toolchain:
+Build the release artifact first (the core dist is generated locally, not committed):
 
 ```bash
-git clone https://github.com/OWNER/yq-sanyi.git
-cd yq-sanyi
 npm install
+npm run build
 ```
 
-Run the local example server:
+Then serve the repo and open `examples/full-demo.html` in a browser:
 
 ```bash
 npm run serve
 ```
 
-Then open the printed URL and browse the ready-to-open pages under `examples/`（含全链路演示 `examples/full-demo.html`）。
+Or write your first component in a plain HTML file. Load the IIFE global build and use the `window.yq` namespace:
 
-Key npm scripts:
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>yq-sanyi greeting</title>
+</head>
+<body>
+  <div id="app"></div>
+  <script src="packages/core/dist/core.global.js"></script>
+  <script>
+    const app = yq.createComponent({
+      name: 'greeting',
+      container: document.getElementById('app'),
+      template: '<p>{{ text }}</p>',
+      script: () => ({ state: { text: 'hello yq-sanyi' } })
+    });
+    yq.mountComponent(app);
+  </script>
+</body>
+</html>
+```
 
-| Script | Description |
-| --- | --- |
-| `npm run build` | bundle core into ESM `packages/core/dist/core.mjs` and IIFE `core.global.js`（暴露 `window.yq`） |
-| `npm run typecheck` | run `tsc --noEmit` |
-| `npm run test` | run automated test suites with `node --test` |
-| `npm run bench` | run performance benchmarks（首屏 / 更新延迟 / 帧率） |
-| `npm run check:all` | dependency-graph + gzip-size + no-comments CI checks |
-| `npm run ci:all` | build + typecheck + test + bench + all checks |
+Prefer ES modules? Import the same runtime from `packages/core/dist/core.mjs` — here is an interactive counter:
 
-Note on zero dependency: the framework runtime itself has no install step — the built artifacts are plain browser files. Deleting `node_modules` does not affect the core bundles or example pages（G-1 基线）.
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>yq-sanyi counter</title>
+</head>
+<body>
+  <div id="app"></div>
+  <script type="module">
+    import { createComponent, mountComponent, updateComponent } from './packages/core/dist/core.mjs';
 
-Browser support: Chrome 60+, Firefox 55+, Safari 12+, Edge 79+（现代浏览器即开即用，无需 polyfill）。
+    const counter = createComponent({
+      name: 'counter',
+      container: document.getElementById('app'),
+      template: `
+        <div>
+          <h3>{{ title }}</h3>
+          <p>Count: {{ count }}</p>
+          <button onclick="counterClick()">+1</button>
+        </div>
+      `,
+      script: () => ({
+        state: {
+          title: 'Counter',
+          count: 0
+        }
+      })
+    });
+
+    window.counterClick = () => {
+      counter.state.count = counter.state.count + 1;
+      updateComponent(counter);
+    };
+
+    mountComponent(counter);
+  </script>
+</body>
+</html>
+```
+
+## How it works
+
+1. **Parse once** — a component template is parsed into a CDO (skeleton tree + style text + script factory) and its dynamic points are pre-scanned into binding slots.
+2. **Clone and fill** — mounting clones the static skeleton once and fills the slots with state for the first paint.
+3. **Update on demand** — `updateComponent` rewrites only dirty slots, comparing old values before writing, and completes each flush atomically.
+4. **Dispose cleanly** — unmounting runs effect cleanup and releases every subscription; no residue after repeated create/remove cycles.
 
 ## Documentation
 
-| Entry | Content |
+| Guide | What you will learn |
 | --- | --- |
-| [GETTING-STARTED.md](GETTING-STARTED.md) | 快速开始指南：基础用法、列表/条件渲染、响应式更新、表单处理、模板语法与完整 API 清单 |
-| [docs/index.md](docs/index.md) | monorepo 总览、工程规范与 npm scripts |
-| [docs/spec/grammar.md](docs/spec/grammar.md) | 模板语法规范 |
-| [docs/spec/reactive-api.md](docs/spec/reactive-api.md) | 响应式 API 规范（state / derived / effect） |
-| [docs/full-demo-documentation.md](docs/full-demo-documentation.md) | 全链路演示说明 |
-| [examples/](examples/) | 可直接打开的 HTML 示例（含 `full-demo.html` 全链路演示、`basic.html` 最小注册表示例） |
+| [English Tutorial](./docs/tutorial.md) | From zero to a working component: template syntax, state, effects, lifecycle |
+| [中文教程](./docs/tutorial.zh-CN.md) | 从零到可运行组件：模板语法、状态、副作用与生命周期 |
+| [Full demo](./examples/full-demo.html) | Form, list, conditional rendering and updates in one page |
+
+## API surface
+
+The core runtime exports these functions from `dist/core.mjs` (also available as `window.yq.*` from the global build):
+
+| API | Purpose |
+| --- | --- |
+| `createComponent(options)` | Create a component instance from a template and script |
+| `mountComponent(instance)` | Mount a component into its container |
+| `updateComponent(instance)` | Flush state changes to the DOM |
+| `unmountComponent(instance)` | Unmount and dispose all subscriptions |
+| `state(initial)` / `derived(fn)` / `effect(fn)` | Reactive primitives |
+| `define(name, entry)` / `lookup(name)` | Component registry |
+
+## Project layout
+
+```text
+yq-sanyi/
+├── packages/core/      Core runtime: parser, reactive, render, component
+├── packages/scoper/    Scoped CSS rewrite and theme tokens
+├── packages/devtools/  Component tree, state snapshot and update log panel
+├── examples/           Runnable demos for a plain browser
+├── bench/              Performance benchmarks
+├── docs/               Tutorials
+└── scripts/            Build, serve and CI gate scripts
+```
+
+## Development
+
+```bash
+npm run build
+npm run test
+npm run bench
+npm run check:all
+npm run ci:all
+```
+
+| Command | What it does |
+| --- | --- |
+| `npm run build` | Bundle the core dist (ESM + IIFE global) |
+| `npm run test` | Run the core test suite |
+| `npm run bench` | Run performance benchmarks |
+| `npm run check:all` | Dependency graph + gzip budget + no-comments gates |
+| `npm run ci:all` | build + typecheck + test + bench + check:all |
+
+The release is tagged `v0.1.0`. Code, examples and docs code fences must stay comment-free; `npm run check:all` enforces it.
+
+## Roadmap
+
+- v0.1.0 — core runtime, trinity components, reactive state, lifecycle, scoping, error boundary, debug panel.
+- v0.2 — loader model and no-build incremental adoption in existing pages.
+- v0.3 — performance hardening, benchmarks in CI, seed-user validation.
 
 ## License
 
-Apache-2.0 — see [LICENSE](LICENSE).
+[Apache License 2.0](./LICENSE) © 2026 yq-sanyi contributors
