@@ -120,7 +120,11 @@ test('isValidTagName enforces hyphenated lowercase names', () => {
   assert.equal(isValidTagName(''), false)
 })
 
-test('define registers a custom element that auto-mounts and syncs state', () => {
+function flush() {
+  return Promise.resolve().then(() => undefined)
+}
+
+test('define registers a custom element that auto-mounts and syncs state', async () => {
   const registered = installGlobals()
   const def = {
     name: 'x-counter',
@@ -153,9 +157,11 @@ test('define registers a custom element that auto-mounts and syncs state', () =>
   assert.equal(button.textContent, 'count 0')
 
   button.dispatch('click')
+  await flush()
   assert.equal(button.textContent, 'count 1')
 
   button.dispatch('click')
+  await flush()
   assert.equal(button.textContent, 'count 2')
 
   instance.disconnectedCallback()
