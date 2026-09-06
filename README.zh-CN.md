@@ -8,6 +8,7 @@ yq-sanyi（三一，"三位一体"）是一个从零自研的零依赖 Web 组�
 
 ![license](https://img.shields.io/badge/license-Apache%202.0-blue)
 ![version](https://img.shields.io/badge/version-v0.2.0-2ea44f)
+![repository](https://img.shields.io/badge/github-YQteam--dyq%2Fyq--sanyi-2ea44f)
 ![dependencies](https://img.shields.io/badge/dependencies-zero-brightgreen)
 ![size](https://img.shields.io/badge/core-8.5%20kB%20gzipped-2ea44f)
 
@@ -41,9 +42,11 @@ yq.define('yq-counter', {
 
 ## 快速开始
 
-先构建一次 bundle，之后写普通 HTML 即可：
+克隆仓库，先构建一次 bundle，之后写普通 HTML 即可：
 
 ```bash
+git clone https://github.com/YQteam-dyq/yq-sanyi.git
+cd yq-sanyi
 npm install
 npm run build
 ```

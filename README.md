@@ -8,6 +8,7 @@ yq-sanyi ("trinity") is a zero-dependency web component framework written from s
 
 ![license](https://img.shields.io/badge/license-Apache%202.0-blue)
 ![version](https://img.shields.io/badge/version-v0.2.0-2ea44f)
+![repository](https://img.shields.io/badge/github-YQteam--dyq%2Fyq--sanyi-2ea44f)
 ![dependencies](https://img.shields.io/badge/dependencies-zero-brightgreen)
 ![size](https://img.shields.io/badge/core-8.5%20kB%20gzipped-2ea44f)
 
@@ -41,9 +42,11 @@ The template is standard HTML, the style is standard CSS, the script is standard
 
 ## Quick start
 
-Build the bundle once, then open or write plain HTML files:
+Clone the repository, build the bundle once, then open or write plain HTML files:
 
 ```bash
+git clone https://github.com/YQteam-dyq/yq-sanyi.git
+cd yq-sanyi
 npm install
 npm run build
 ```
