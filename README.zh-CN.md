@@ -7,7 +7,7 @@ yq-sanyi（三一，"三位一体"）是一个从零自研的零依赖 Web 组�
 [English](./README.md) · [English tutorial](./docs/tutorial.md) · [中文教程](./docs/tutorial.zh-CN.md)
 
 ![license](https://img.shields.io/badge/license-Apache%202.0-blue)
-![version](https://img.shields.io/badge/version-v0.1.0-2ea44f)
+![version](https://img.shields.io/badge/version-v0.2.0-2ea44f)
 ![dependencies](https://img.shields.io/badge/dependencies-zero-brightgreen)
 ![size](https://img.shields.io/badge/core-8.5%20kB%20gzipped-2ea44f)
 
@@ -99,7 +99,7 @@ npm run build
 
 `define` 阶段会对非法名称直接报错，拼写错误不会在页面里悄悄失效。
 
-## v0.1.0 现有能力
+## v0.2.0 现有能力
 
 - **声明式组件。** `define` 注册原生自定义元素；标签自动挂载、自动更新、自动清理。
 - **模板。** 文本绑定 `{{ 路径 }}`、整值属性绑定、布尔属性、带稳定 `yq-key` 的列表渲染 `yq-for`、事件绑定 `yq-on:事件="处理函数"`。
@@ -109,7 +109,6 @@ npm run build
 - **作用域样式。** 选择器改写式隔离，不要求 Shadow DOM；CSS 变量主题；同一组件样式只注入一次；全局样式注册表。
 - **生命周期。** 有序的挂载 / 更新 / 卸载，释放无泄漏；宿主移除时嵌套组件随之清理。
 - **调试钩子。** 组件树、状态快照与更新日志经生命周期钩子可读；另附独立 devtools 包。
-- **仓库约定。** 代码、示例与 docs 代码块一律零注释，由 `scripts/check-no-comments.mjs` 强制。
 
 ## API 速览
 
@@ -139,7 +138,7 @@ ESM 入口为 `packages/core/dist/core.mjs`；全局构建为 `packages/core/dis
 
 - **`yq-for` 行内事件。** `yq-on:*` 无法绑定到列表行生成的元素上；请把处理函数放到组件的静态部分，或在容器上做事件委托。该限制留待后续版本解决。
 - **Shadow DOM 为可选。** 默认用作用域改写做样式隔离；需要强封装时 `createScopedElement` 可开启 `useShadowDOM`。
-- **v0.1.0 仅限浏览器运行时。** 无 SSR、无 CLI、无非浏览器端目标——均为首版明确不做范围。
+- **v0.2.0 仅限浏览器运行时。** 无 SSR、无 CLI、无非浏览器端目标——均为本版明确不做范围。
 
 ## 文档
 
@@ -156,8 +155,8 @@ packages/core/dist     构建产物（core.mjs、core.global.js）
 packages/core/test     node:test 断言测试套件
 packages/devtools      可选调试面板（独立 bundle）
 examples/              可运行 HTML 示例
-docs/                  教程与决策记录
-scripts/               仓库门禁：依赖、gzip 预算、零注释
+docs/                  教程
+scripts/               仓库门禁：依赖图与包体积检查
 ```
 
 ## 开发
@@ -172,9 +171,7 @@ npm run check:all
 - `npm run build` — 打包 `dist/core.mjs` 与 `dist/core.global.js`
 - `npm run test` — 运行核心测试套件
 - `npm run bench` — 对照 §7.4 预算运行性能基准
-- `npm run check:all` — 依赖图、gzip 预算与零注释门禁
-
-代码、示例与 docs 代码块保持零注释；`npm run check:all` 强制执行。
+- `npm run check:all` — 依赖图与包体积门禁
 
 ## 许可证
 
