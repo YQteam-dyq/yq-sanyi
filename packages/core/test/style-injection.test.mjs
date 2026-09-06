@@ -1,15 +1,23 @@
-
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
 import { scoper } from '../dist/core.mjs'
-
 
 const mockStyleElements = []
 const mockDocument = {
-  createElement: (tagName) => ({
-    tagName,
-    textContent: '',
-    setAttribute: (key, value) => {},
-    remove: () => {}
-  }),
+  createElement: (tagName) => {
+    const element = {
+      tagName,
+      textContent: '',
+      setAttribute: (key, value) => {},
+      remove: () => {
+        const index = mockStyleElements.indexOf(element)
+        if (index > -1) {
+          mockStyleElements.splice(index, 1)
+        }
+      }
+    }
+    return element
+  },
   head: {
     appendChild: (element) => {
       mockStyleElements.push(element)
@@ -17,49 +25,44 @@ const mockDocument = {
   }
 }
 
-
 global.document = mockDocument
 
-console.log('=== Style Injection Management Tests ===')
-
-
-console.log('\nTest 1: Multiple instances of same CSS')
-
 const css1 = '.button { color: red; }'
-const injection1 = scoper.injectStyle(css1, 'scope-1')
-console.log('✓ First injection created:', injection1.id)
+let injection1
+let injection2
 
-const injection2 = scoper.injectStyle(css1, 'scope-1')
-console.log('✓ Second injection reuses same style:', injection2.id === injection1.id)
-console.log('✓ Reference count:', injection1.references)
+test('same css and same scope reuses the injection id and bumps references', () => {
+  injection1 = scoper.injectStyle(css1, 'scope-1')
+  assert.ok(injection1 && typeof injection1.id === 'string')
+  assert.strictEqual(mockStyleElements.length, 1)
+  injection2 = scoper.injectStyle(css1, 'scope-1')
+  assert.strictEqual(injection2.id, injection1.id)
+  assert.strictEqual(injection1.references, 2)
+  assert.strictEqual(mockStyleElements.length, 1)
+})
 
+test('different css creates a new injection', () => {
+  const injection3 = scoper.injectStyle('.container { background: blue; }', 'scope-2')
+  assert.notStrictEqual(injection3.id, injection1.id)
+  assert.strictEqual(mockStyleElements.length, 2)
+})
 
-console.log('\nTest 2: Different CSS creates separate injections')
+test('removeStyle decrements the reference count', () => {
+  scoper.removeStyle(injection1)
+  assert.strictEqual(injection1.references, 1)
+  assert.strictEqual(mockStyleElements.length, 2)
+})
 
-const css2 = '.container { background: blue; }'
-const injection3 = scoper.injectStyle(css2, 'scope-2')
-console.log('✓ Different CSS creates new injection:', injection3.id !== injection1.id)
+test('style element is removed when references reach zero', () => {
+  scoper.removeStyle(injection1)
+  assert.strictEqual(injection1.references, 0)
+  assert.ok(!mockStyleElements.includes(injection1.element))
+  assert.strictEqual(mockStyleElements.length, 1)
+})
 
-
-console.log('\nTest 3: Remove style decreases reference count')
-
-scoper.removeStyle(injection1)
-console.log('✓ Reference count after removal:', injection1.references)
-
-
-console.log('\nTest 4: Remove all references cleans up style')
-
-scoper.removeStyle(injection1)
-console.log('✓ Style element removed when references reach 0:', mockStyleElements.length === 0)
-
-
-console.log('\nTest 5: Different scope IDs create separate injections')
-
-const injection4 = scoper.injectStyle(css1, 'scope-3')
-const injection5 = scoper.injectStyle(css1, 'scope-4')
-console.log('✓ Different scope IDs create separate injections:', injection4.id !== injection5.id)
-
-
-delete global.document
-
-console.log('\n=== Style Injection Management Tests Completed ===')
+test('different scope ids create separate injections', () => {
+  const injection4 = scoper.injectStyle(css1, 'scope-3')
+  const injection5 = scoper.injectStyle(css1, 'scope-4')
+  assert.notStrictEqual(injection4.id, injection5.id)
+  delete global.document
+})

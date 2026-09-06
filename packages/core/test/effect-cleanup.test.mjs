@@ -1,3 +1,5 @@
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
 import { createComponent, mountComponent, unmountComponent, effect, state } from '../dist/core.mjs'
 
 global.document = {
@@ -60,76 +62,65 @@ global.document = {
   }
 };
 
-console.log('=== Effect Cleanup Tests ===')
+test('effect cleanup runs when the returned function is invoked', () => {
+  let cleanupCount = 0;
 
-
-console.log('\n--- Test 1: Effect cleanup ---')
-let cleanupCount = 0;
-
-const cleanup1 = effect(() => {
-  console.log('Effect running');
-  return () => {
-    cleanupCount++;
-    console.log('Cleanup called');
-  };
-});
-
-
-cleanup1();
-
-
-console.log('\n--- Test 2: Component with effect cleanup ---')
-let componentCleanupCount = 0;
-
-const container = {
-  innerHTML: '',
-  appendChild: () => {},
-  removeChild: () => {},
-  textContent: ''
-};
-
-const component = createComponent({
-  name: 'test-component',
-  template: '<div>Hello</div>',
-  container: container
-});
-
-mountComponent(component);
-
-const cleanup2 = effect(() => {
-  return () => {
-    componentCleanupCount++;
-    console.log('Component cleanup called');
-  };
-});
-
-unmountComponent(component);
-
-
-cleanup2();
-
-
-console.log('\n--- Test 3: Multiple effects ---')
-let multipleCleanupCount = 0;
-const cleanups = [];
-
-for (let i = 0; i < 5; i++) {
-  const cleanup = effect(() => {
+  const cleanup1 = effect(() => {
     return () => {
-      multipleCleanupCount++;
+      cleanupCount++;
     };
   });
-  cleanups.push(cleanup);
-}
 
+  cleanup1();
 
-cleanups.forEach(cleanup => cleanup());
+  assert.strictEqual(cleanupCount, 1);
+});
 
-console.log('Cleanup count:', multipleCleanupCount);
+test('component with effect cleanup', () => {
+  let componentCleanupCount = 0;
 
+  const container = {
+    innerHTML: '',
+    appendChild: () => {},
+    removeChild: () => {},
+    textContent: ''
+  };
 
-if (cleanupCount === 1 && componentCleanupCount === 1 && multipleCleanupCount === 5) {
-  console.log('\n✓ All cleanup tests passed!');
-} else {
-  console.log('\n✗ Cleanup tests failed. Expected:', { cleanupCount: 1, componentCleanupCount: 1, multipleCleanupCount: 5 }, 'Actual:', { cleanupCount, componentCleanupCount, multipleCleanupCount });
-}
+  const component = createComponent({
+    name: 'test-component',
+    template: '<div>Hello</div>',
+    container: container
+  });
+
+  mountComponent(component);
+
+  const cleanup2 = effect(() => {
+    return () => {
+      componentCleanupCount++;
+    };
+  });
+
+  unmountComponent(component);
+
+  cleanup2();
+
+  assert.strictEqual(componentCleanupCount, 1);
+});
+
+test('multiple effects each clean up once', () => {
+  let multipleCleanupCount = 0;
+  const cleanups = [];
+
+  for (let i = 0; i < 5; i++) {
+    const cleanup = effect(() => {
+      return () => {
+        multipleCleanupCount++;
+      };
+    });
+    cleanups.push(cleanup);
+  }
+
+  cleanups.forEach(cleanup => cleanup());
+
+  assert.strictEqual(multipleCleanupCount, 5);
+});
