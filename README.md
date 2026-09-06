@@ -176,6 +176,14 @@ npm run check:all
 - `npm run bench` — run benchmarks against the §7.4 budget
 - `npm run check:all` — dependency graph and bundle-size gates
 
+## Support
+
+yq-sanyi is built and maintained in our free time. If it saves you time, consider supporting the project:
+
+- 爱发电 (Afdian): <https://afdian.com/a/yqteam?utm_source=copylink&utm_medium=link>
+
+Your support helps keep the framework free, open and zero-dependency.
+
 ## License
 
 Apache License 2.0. Copyright 2026 YQteam-dyq. See [LICENSE](./LICENSE).
