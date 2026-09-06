@@ -1,8 +1,6 @@
-
-
-
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
 import { scoper } from '../dist/core.mjs'
-
 
 const mockDOM = {
   createElement: (tag) => ({
@@ -20,63 +18,44 @@ const mockDOM = {
   }
 }
 
-
 global.document = mockDOM
 
-console.log('=== Global Styles Management Tests ===')
+let autoStyleId = null
 
-try {
-
+test('addGlobalStyle with explicit id registers the style and returns that id', () => {
   const styleId1 = scoper.addGlobalStyle('.global-button { color: blue; }', 'global-button-style')
-  if (styleId1 && typeof styleId1 === 'string') {
-    console.log('✓ Global style added:', styleId1)
-  } else {
-    console.log('✗ Global style addition failed')
-  }
+  assert.ok(styleId1 && typeof styleId1 === 'string')
+  assert.strictEqual(styleId1, 'global-button-style')
+})
 
+test('addGlobalStyle without id generates and returns a style id', () => {
+  autoStyleId = scoper.addGlobalStyle('.global-container { background: white; }')
+  assert.ok(autoStyleId && typeof autoStyleId === 'string')
+})
 
-  const styleId2 = scoper.addGlobalStyle('.global-container { background: white; }')
-  if (styleId2 && typeof styleId2 === 'string') {
-    console.log('✓ Global style added without ID:', styleId2)
-  } else {
-    console.log('✗ Global style addition without ID failed')
-  }
-
-
+test('getGlobalStyles returns all registered global styles', () => {
   const globalStyles = scoper.getGlobalStyles()
-  if (globalStyles && typeof globalStyles === 'object' && Object.keys(globalStyles).length >= 2) {
-    console.log('✓ Global styles retrieved:', Object.keys(globalStyles))
-  } else {
-    console.log('✗ Global styles retrieval failed')
-  }
+  assert.ok(globalStyles && typeof globalStyles === 'object')
+  const keys = Object.keys(globalStyles)
+  assert.ok(keys.length >= 2)
+  assert.ok(keys.includes('global-button-style'))
+  assert.ok(keys.includes(autoStyleId))
+})
 
-
+test('removeGlobalStyle removes only the targeted style', () => {
   scoper.removeGlobalStyle('global-button-style')
   const updatedStyles = scoper.getGlobalStyles()
-  if (!updatedStyles['global-button-style'] && updatedStyles[styleId2]) {
-    console.log('✓ Global style removed successfully')
-  } else {
-    console.log('✗ Global style removal failed')
-  }
+  assert.ok(!updatedStyles['global-button-style'])
+  assert.ok(updatedStyles[autoStyleId])
+})
 
-
+test('clearGlobalStyles empties the style registry', () => {
   scoper.clearGlobalStyles()
   const clearedStyles = scoper.getGlobalStyles()
-  if (Object.keys(clearedStyles).length === 0) {
-    console.log('✓ All global styles cleared')
-  } else {
-    console.log('✗ Global styles clear failed')
-  }
+  assert.strictEqual(Object.keys(clearedStyles).length, 0)
+})
 
-
-  scoper.removeGlobalStyle('non-existent-style')
-  console.log('✓ Non-existent style removal handled gracefully')
-
-} catch (error) {
-  console.log('✗ Global styles management failed:', error.message)
-}
-
-
-delete global.document
-
-console.log('\n=== Global Styles Management Tests Completed ===')
+test('removeGlobalStyle with a non-existent id does not throw', () => {
+  assert.doesNotThrow(() => scoper.removeGlobalStyle('non-existent-style'))
+  delete global.document
+})
