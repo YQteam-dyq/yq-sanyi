@@ -19,3 +19,5 @@ docs/decisions/
 docs/spec/
 docs/full-demo-documentation.md
 docs/index.md
+tests/
+examples/prototypes/

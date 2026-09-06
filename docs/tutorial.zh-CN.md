@@ -1,203 +1,354 @@
 # yq-sanyi 教程
 
-从零开始学会 yq-sanyi：环境准备、模板语法、响应式状态、副作用与生命周期。仓库遵循全项目零注释约定，因此以下所有示例都刻意不写注释。
+从零开始学会 yq-sanyi：声明式标签、模板语法、状态与处理函数、组件嵌套、样式与生命周期。文中所有示例都是可以直接保存并打开的普通 HTML 文件。
 
-> English: [English Tutorial](./tutorial.md)
+> English: [English tutorial](./tutorial.md)
 
 ## 目录
 
-1. [你将完成什么](#你将完成什么)
+1. [你将构建什么](#你将构建什么)
 2. [环境准备](#环境准备)
 3. [第一个组件](#第一个组件)
-4. [模板语法](#模板语法)
-5. [状态、派生值与副作用](#状态派生值与副作用)
-6. [事件与更新](#事件与更新)
-7. [生命周期与清理](#生命周期与清理)
-8. [常见问题](#常见问题)
-9. [下一步](#下一步)
+4. [随处使用标签](#随处使用标签)
+5. [模板语法](#模板语法)
+6. [状态与处理函数](#状态与处理函数)
+7. [组件嵌套](#组件嵌套)
+8. [样式与主题](#样式与主题)
+9. [响应式原语](#响应式原语)
+10. [生命周期与清理](#生命周期与清理)
+11. [命令式 API](#命令式-api)
+12. [问题排查](#问题排查)
+13. [下一步](#下一步)
 
-## 你将完成什么
+## 你将构建什么
 
-先做一个计数器页面，再做用户列表，最后做一个表单。它们会覆盖框架的全部核心概念：单文件组件、声明式模板、响应式状态、派生值、带自动清理的副作用，以及显式更新。
+一个计数器、一个用户列表、一个小型主题面板。它们覆盖了全部核心概念：一次定义、作为原生标签复用；响应式状态与自动更新；带稳定 key 的列表；组件嵌套；作用域样式与主题变量。
 
 ## 环境准备
 
-核心运行时被打包为 `packages/core/dist/core.mjs`（ES 模块）和 `packages/core/dist/core.global.js`（IIFE 全局构建）。dist 目录在本地生成：
+核心运行时位于 `packages/core/dist/core.mjs`（ES module）与 `packages/core/dist/core.global.js`（IIFE 全局构建）。dist 目录在本地生成：
 
 ```bash
 npm install
 npm run build
 ```
 
-启动本地服务并在浏览器中打开示例：
+启动本地服务并在浏览器里打开示例：
 
 ```bash
 npm run serve
 ```
 
-也可以新建独立 HTML 文件，按其在仓库中的位置引入运行时：位于仓库根目录的文件用 `./packages/core/dist/core.mjs`，位于 `examples/` 内的文件用 `../packages/core/dist/core.mjs`。请按实际位置调整相对路径。
+你也可以新建独立的 HTML 文件，从仓库相对路径引入运行时。按文件所在位置调整路径：`examples/` 里的文件使用 `../packages/core/dist/core.global.js`。
 
 ## 第一个组件
 
-组件是一个对象：模板字符串、返回状态的脚本函数，以及要挂载到的容器。
+定义一次组件，然后把它当标签用。保存为 `counter.html`：
 
 ```html
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
-  <title>我的第一个 yq-sanyi 组件</title>
+  <title>yq-sanyi 计数器</title>
 </head>
 <body>
-  <div id="app"></div>
-  <script type="module">
-    import { createComponent, mountComponent } from './packages/core/dist/core.mjs';
+  <yq-counter></yq-counter>
 
-    const greeting = createComponent({
-      name: 'greeting',
-      container: document.getElementById('app'),
-      template: '<h1>{{ title }}</h1><p>{{ message }}</p>',
-      script: () => ({
-        state: {
-          title: '你好，yq-sanyi',
-          message: '一个零依赖的 Web 框架。'
+  <script src="./packages/core/dist/core.global.js"></script>
+  <script>
+    yq.define('yq-counter', {
+      template: '<button yq-on:click="inc">计数 {{ count }}</button>',
+      style: 'button { font-size: 18px; padding: 8px 18px; cursor: pointer; }',
+      script: function () {
+        return {
+          state: { count: 0 },
+          inc: function (state) {
+            state.count = state.count + 1
+          }
         }
-      })
-    });
-
-    mountComponent(greeting);
+      }
+    })
   </script>
 </body>
 </html>
 ```
 
-运行后即可看到两行内容渲染出来。这里发生了两件事：
+一次定义包含三个部分：
 
-1. `createComponent` 解析了一次模板，并把动态点登记为绑定槽。
-2. `mountComponent` 克隆静态骨架，并用状态完成填槽。
+- `template` 是标准 HTML，含 `{{ path }}` 占位符与 `yq-on:*` 事件绑定。
+- `style` 是标准 CSS，且已做作用域隔离：只作用于该组件内部的元素。
+- `script` 是一个普通函数，返回初始 `state` 与事件处理函数（如 `inc`）。
 
-模板就是普通 HTML 加 `{{ 路径 }}` 占位符；状态值用点路径读取，例如 `user.name`。
+点击按钮：`inc` 拿到响应式 state，修改它，标签就地重渲染。整个过程无需手动操作 DOM。
+
+## 随处使用标签
+
+注册之后，标签就是一个普通自定义元素。同页可以放任意多个实例，也可以放进其它组件或后续动态注入的 HTML 里——每个实例自动挂载、渲染、自我清理：
+
+```html
+<body>
+  <yq-counter></yq-counter>
+  <yq-counter></yq-counter>
+
+  <script src="./packages/core/dist/core.global.js"></script>
+  <script>
+    yq.define('yq-counter', {
+      template: '<button yq-on:click="inc">计数 {{ count }}</button>',
+      script: function () {
+        return {
+          state: { count: 0 },
+          inc: function (state) {
+            state.count = state.count + 1
+          }
+        }
+      }
+    })
+  </script>
+</body>
+```
+
+标签名须遵守自定义元素规则：以小写字母开头、包含连字符、整体小写。`yq-counter` 合法；`counter` 与 `Counter` 不合法，`define` 会对非法名称直接报错。
 
 ## 模板语法
 
 ### 文本绑定
 
+`{{ path }}` 写入状态值。路径用点分隔：`{{ user.name }}`。
+
 ```html
-<div>{{ message }}</div>
+<div>{{ greeting }}，{{ user.name }}</div>
 ```
 
 ### 属性绑定
 
-属性值整体为占位符时即被绑定到状态，每次更新都会回写。
+整个值恰好是一个占位符的属性会绑定到状态，并在每次更新时写回。
 
 ```html
-<input value="{{ inputValue }}">
+<input value="{{ inputValue }}" placeholder="{{ placeholder }}">
 ```
 
 ### 列表渲染
 
-在容器元素上加 `yq-for="item in items"`。框架会为每个列表项渲染一份副本，并在列表变化时更新。
+在容器元素上加 `yq-for="item in items"`。框架为每个条目渲染一份副本，并让行与列表保持同步。
 
 ```html
 <ul>
-  <li yq-for="user in users">{{ user.name }}</li>
+  <li yq-for="user in users" yq-key="id">{{ user.name }} - {{ user.role }}</li>
 </ul>
 ```
 
-### 条件渲染
+`yq-key` 指定条目的稳定字段。行按 key 匹配并复用而非重建，能保留行内状态并最小化 DOM 写入。带 key 的行不要嵌套在另一个 `yq-for` 里，且列表行内不支持事件绑定——参见[问题排查](#问题排查)。
 
-给元素加 `yq-if="条件"`，仅当状态路径为真值时渲染。
+### 事件绑定
 
-```html
-<div yq-if="isVip">VIP 会员</div>
-```
-
-### 双向绑定式表单字段
-
-`yq-model="路径"` 把输入框绑定到状态。
+`yq-on:event="handler"` 把元素事件绑定到 `script` 返回的处理函数上。
 
 ```html
-<input type="text" yq-model="formData.name">
+<button yq-on:click="save">保存</button>
 ```
 
-## 状态、派生值与副作用
-
-脚本函数可返回三部分：`state`、`derived` 与 `effect`。
-
-- `state` 存放普通响应式字段，模板用 `{{ }}` 读取。
-- `derived` 只在依赖变化时重新计算记忆化值。
-- `effect` 在挂载后执行一次，可返回卸载时运行的清理函数。
-
-```javascript
-const counter = createComponent({
-  name: 'counter',
-  container: document.getElementById('app'),
-  template: `
-    <div>
-      <p>计数：{{ count }}</p>
-      <p>两倍：{{ double }}</p>
-      <button onclick="bump()">+1</button>
-    </div>
-  `,
-  script: () => ({
-    state: {
-      count: 0
-    },
-    derived: {
-      double: (state) => state.count * 2
-    },
-    effect: () => {
-      console.log('计数器已挂载');
-      return () => {
-        console.log('计数器已卸载');
-      };
+```html
+<script>
+  yq.define('yq-form', {
+    template: '<button yq-on:click="save">保存</button><span>{{ status }}</span>',
+    script: function () {
+      return {
+        state: { status: 'idle' },
+        save: function (state, event) {
+          state.status = 'saved'
+        }
+      }
     }
   })
-});
+</script>
 ```
 
-## 事件与更新
+处理函数接收响应式 state 与原生事件对象。更新有批处理机制：一个处理函数内的多次状态写入只渲染一次。
 
-内联事件处理器调用你挂到 `window` 上的函数。修改状态不会自动渲染，需调用 `updateComponent` 把新状态刷写到 DOM，让更新显式、可预期。
+## 状态与处理函数
 
-```javascript
-window.bump = () => {
-  counter.state.count = counter.state.count + 1;
-  updateComponent(counter);
-};
+`script` 返回 `{ state, ...handlers }`。`state` 是模板读取的响应式数据；其余每个函数都是可被 `yq-on:*` 调用的处理函数。
 
-mountComponent(counter);
+```html
+<script>
+  yq.define('yq-todo', {
+    template: `
+      <input value="{{ draft }}">
+      <button yq-on:click="add">添加</button>
+      <ul>
+        <li yq-for="todo in todos" yq-key="id">{{ todo.text }}</li>
+      </ul>
+    `,
+    script: function () {
+      return {
+        state: { draft: '', todos: [] },
+        add: function (state) {
+          if (state.draft.trim().length === 0) return
+          state.todos.push({ id: state.todos.length + 1, text: state.draft })
+          state.draft = ''
+        }
+      }
+    }
+  })
+</script>
 ```
 
-上面的完整流程：点击调用 `bump` → 状态变化 → `updateComponent` 只重写脏槽 → `double` 因依赖变化而重新计算。
+任意页面放一个 `<yq-todo></yq-todo>` 即可。向 `todos` push 只重渲染列表；清空 `draft` 清掉输入框。`add` 里的所有写入在同一个同步渲染中一次性刷新。
+
+## 组件嵌套
+
+已注册的标签可以直接写进另一个组件的模板。父组件渲染时子组件自动挂载；父组件元素从页面移除时，子组件一并卸载并释放监听器。
+
+```html
+<script>
+  yq.define('yq-list-item', {
+    template: '<li>{{ label }}</li>',
+    script: function () {
+      return { state: { label: 'item' } }
+    }
+  })
+
+  yq.define('yq-list', {
+    template: '<ul><yq-list-item></yq-list-item></ul>',
+    script: function () {
+      return { state: {} }
+    }
+  })
+</script>
+```
+
+## 样式与主题
+
+`style` 字段会被改写，使其选择器只匹配该组件自身子树内的元素。同一组件的多个实例只注入一份样式；最后一个实例卸载时这份样式随之移除。
+
+```html
+<script>
+  yq.define('yq-panel', {
+    template: '<div class="panel"><h3>{{ title }}</h3><p class="hint">{{ hint }}</p></div>',
+    style: `
+      .panel { border: 1px solid var(--yq-border-color, #ddd); border-radius: 8px; padding: 16px; }
+      .hint { color: var(--yq-text-muted, #666); }
+    `,
+    script: function () {
+      return {
+        state: { title: 'panel', hint: 'theme-aware hint' }
+      }
+    }
+  })
+</script>
+```
+
+组件通过带 CSS 兜底的主题变量读取主题。通过 scoper 为整页换主题：
+
+```html
+<script>
+  yq.scoper.updateTheme({
+    'border-color': '#2563eb',
+    'text-muted': '#1e40af'
+  })
+</script>
+```
+
+页面级全局样式用 `yq.scoper.addGlobalStyle(css, id)` 显式注册，用 `removeGlobalStyle(id)` 移除。默认样式隔离采用作用域改写，CSS 变量与继承行为保持不变；需要强封装时可通过 `createScopedElement(..., { useShadowDOM: true })` 为组件开启 Shadow DOM。
+
+## 响应式原语
+
+组件自己管理状态。当需要在组件之外共享状态时，核心同样导出带依赖追踪的 `state`、`derived`、`effect` 原语：
+
+```html
+<script>
+  const count = yq.state(0)
+  const doubled = yq.derived(function () { return count.value * 2 })
+
+  yq.effect(function () {
+    document.getElementById('double').textContent = doubled.value
+  })
+
+  yq.define('yq-bump', {
+    template: '<button yq-on:click="bump">+1</button>',
+    script: function () {
+      return {
+        state: {},
+        bump: function () {
+          count.value = count.value + 1
+        }
+      }
+    }
+  })
+</script>
+```
+
+`state(x)` 返回一个盒子，通过 `.value` 读写。`derived` 只在依赖变化时重算。`effect` 在依赖变化时重跑，且可返回清理函数：下一次运行前与 effect 被释放时都会先执行清理。
 
 ## 生命周期与清理
 
-卸载会释放组件注册的一切——effect、derived 订阅与 DOM 节点——反复创建/移除不会留下残留。
+组件元素的生命周期由运行时完整管理：
 
-```javascript
-mountComponent(counter);
+- 把标签挂到已连接的文档上即完成挂载：构建骨架、填充插槽、绑定处理函数。
+- 修改状态只刷新绑定的部分。
+- 移除标签即卸载：监听器与订阅被释放，最后一个实例卸载时共享样式一并移除。
 
-setTimeout(() => {
-  unmountComponent(counter);
-  console.log('计数器已移除');
-}, 5000);
+移除组件元素，它的状态、DOM 与监听器随之消失：
+
+```html
+<script>
+  const list = document.getElementById('board')
+  const panel = document.createElement('yq-panel')
+  list.appendChild(panel)
+  panel.remove()
+</script>
 ```
 
-如果 effect 启动了定时器、订阅或请求，请从 effect 返回一个清理函数，它会在卸载时被自动调用。这正是防止内存泄漏的机制。
+`panel.remove()` 会走该实例的卸载路径——无需额外代码，也没有按使用处的清理工作。用命令式 API 创建的组件，可以把 effect 清理注册到实例上，卸载时自动执行（见下一节）。
 
-## 常见问题
+## 命令式 API
 
-| 现象 | 原因与修复 |
+声明式是主路径，但运行时同样导出命令式 API 供编程式挂载：`createComponent`、`mountComponent`、`updateComponent`、`unmountComponent`，配合 `effect` 与 `setLifecycleHooks` 管理副作用与观察生命周期：
+
+```html
+<script type="module">
+  import { createComponent, mountComponent, effect, setLifecycleHooks, unmountComponent } from './packages/core/dist/core.mjs';
+
+  const widget = createComponent({
+    name: 'yq-widget',
+    template: '<b>{{ label }}</b>',
+    script: function () {
+      return { state: { label: 'hello from code' } }
+    }
+  });
+
+  setLifecycleHooks(widget, {
+    onMount: function () { console.log('mounted') },
+    onUnmount: function () { console.log('unmounted') }
+  });
+
+  effect(function () {
+    const timer = setInterval(() => { console.log('tick') }, 1000);
+    return function () { clearInterval(timer) };
+  });
+
+  mountComponent(widget);
+  unmountComponent(widget);
+</script>
+```
+
+`setLifecycleHooks` 观察有序的挂载 / 更新 / 卸载阶段。`effect` 返回清理函数；`unmountComponent` 在拆除组件前会执行所有已注册的清理，因此反复的创建 / 移除循环不会留下残留。
+
+## 问题排查
+
+| 现象 | 原因与解决办法 |
 | --- | --- |
-| 什么都没渲染 | 容器元素不存在或运行时路径不对。检查 `document.getElementById` 与 import 路径。 |
-| 占位符文本仍显示 | `{{ }}` 里的状态路径与 state 字段不匹配。路径以点分隔，例如 `{{ user.name }}`。 |
-| 点击按钮无反应 | 处理器没有挂到 `window`，或改了状态却没调用 `updateComponent`。 |
-| 属性绑定报错 | 只支持整值属性绑定；`class="{{ a }} {{ b }}"` 这类部分绑定会被设计性地拒绝。 |
-| 组件解析失败 | 错误边界会显示占位符并记录结构化告警；同页其它组件继续正常工作。 |
+| 什么都没渲染 | 运行时路径不对，或 HTML 里的标签名与传给 `define` 的名字不一致。请使用同一个全小写含连字符的名字。 |
+| `{{ count }}` 这类占位符仍然可见 | 状态路径与 `script` 返回的键不匹配。路径用点分隔：`{{ user.name }}`。 |
+| 点击按钮没反应 | `yq-on:click` 里的处理函数名不是 `script` 返回的函数之一，或拼写有误。 |
+| 列表行不更新 | 行按 `yq-key` 匹配；请给每个条目稳定的唯一 id。`yq-for` 行内不支持事件绑定——请在组件静态部分调用修改状态的处理函数。 |
+| 样式泄漏或不生效 | 写在组件 `style` 字段里的样式自动做作用域隔离；页面级规则必须用 `yq.scoper.addGlobalStyle` 显式注册。 |
+| 组件崩溃 | 错误边界渲染占位符并输出结构化告警，页面其它组件照常工作。 |
+| 多次写入只更新了一次 | 这是设计如此。同一同步任务内的写入会批量合并为一次刷新。 |
 
 ## 下一步
 
-- 阅读 README 中的 [v0.1.0 现有能力](../README.zh-CN.md#v010-现有能力)。
-- 打开 `examples/full-demo.html` 完整示例，查看表单、列表与条件渲染的组合。
-- 阅读本教程英文版：[English Tutorial](./tutorial.md)。
+- 查看 [功能与 API 总览](../README.md)。
+- 打开 `examples/full-demo.html`：一页演示标签、事件、列表与状态。
+- 阅读本教程的英文版：[English tutorial](./tutorial.md)。

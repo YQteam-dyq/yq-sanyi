@@ -1,4 +1,4 @@
-export const version = '0.1.0'
+export const version = '0.2.0'
 
 import { getDebugManager } from './debug-manager-simple.js'
 import { ErrorBoundary } from './error-boundary.js'
