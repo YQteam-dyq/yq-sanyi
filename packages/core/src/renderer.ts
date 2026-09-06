@@ -1,7 +1,27 @@
 import type { SNode, Slot, Cdo, RenderContext, ComponentInstance, ComponentOptions, ScoperOptions, Scoper, StyleInjection, LifecycleHooks, ParsedPart } from './index.js'
-import { parseTemplate, createRenderContext, resolvePath, generateScopeId } from './index.js'
+import { parseTemplate, createRenderContext, resolvePath, generateScopeId, createStateProxy } from './index.js'
 import { DebugManager, DebugManagerOptions, getDebugManager } from './debug-manager-simple.js'
 import { ErrorBoundary } from './error-boundary.js'
+
+function findNode(cdo: Cdo, nodeId: number): SNode | null {
+  for (const node of cdo.nodes) {
+    if (node.id === nodeId) return node
+  }
+  return null
+}
+
+function composeText(snode: SNode, state: Record<string, any>): string {
+  let out = ''
+  for (const part of snode.text) {
+    if ('static' in part) {
+      out += part.static
+    } else {
+      const value = resolvePath(state, part.path)
+      out += value == null ? '' : String(value)
+    }
+  }
+  return out
+}
 
 function cloneStaticNode(node: SNode): Element {
   const element = document.createElement(node.tag) as HTMLElement
@@ -39,19 +59,13 @@ function cloneStaticNode(node: SNode): Element {
   return element
 }
 
-function fillTextSlot(node: Element, slot: Extract<Slot, { kind: 'text' }>, context: RenderContext): void {
-  const parts = node.textContent?.split('') || []
-  let currentText = ''
-  
-  for (let i = 0; i < parts.length; i++) {
-    if (i === slot.partIndex) {
-      const value = slot.path ? resolvePath(context.state, slot.path) : undefined
-      currentText += String(value)
-    }
-    currentText += parts[i]
+function fillTextSlot(node: Element, slot: Extract<Slot, { kind: 'text' }>, context: RenderContext, cdo: Cdo): void {
+  const snode = findNode(cdo, slot.nodeId)
+  if (!snode || snode.children.length > 0) return
+  const text = composeText(snode, context.state)
+  if (node.textContent !== text) {
+    ;(node as HTMLElement).textContent = text
   }
-  
-  ;(node as HTMLElement).textContent = currentText
 }
 
 function fillAttrSlot(node: Element, slot: Extract<Slot, { kind: 'attr' }>, context: RenderContext): void {
@@ -70,50 +84,93 @@ function fillBoolSlot(node: Element, slot: Extract<Slot, { kind: 'bool' }>, cont
   }
 }
 
-function createListItem(cdo: Cdo, slot: Extract<Slot, { kind: 'list' }>, item: any, index: number, context: RenderContext): Element {
-  const fragment = document.createDocumentFragment()
-  const itemState = { ...context.state, [slot.itemVar]: item }
-  const itemContext = { ...context, state: itemState }
-  
-  const itemElement = cloneStaticNode(cdo.root)
-  fragment.appendChild(itemElement)
-  
-  for (const childSlot of cdo.slots) {
-    if (childSlot.kind === 'text' && childSlot.nodeId === cdo.root.id) {
-      fillTextSlot(itemElement, childSlot, itemContext)
-    } else if (childSlot.kind === 'attr' && childSlot.nodeId === cdo.root.id) {
-      fillAttrSlot(itemElement, childSlot, itemContext)
-    } else if (childSlot.kind === 'bool' && childSlot.nodeId === cdo.root.id) {
-      fillBoolSlot(itemElement, childSlot, itemContext)
-    }
+function collectSubtreeIds(node: SNode, out: Set<number>): void {
+  out.add(node.id)
+  for (const child of node.children) {
+    collectSubtreeIds(child, out)
   }
-  
-  return fragment.firstChild as Element
 }
 
-function fillListSlot(node: Element, slot: Extract<Slot, { kind: 'list' }>, context: RenderContext, cdo: Cdo): void {
-  const items = resolvePath(context.state, slot.itemsPath) || []
+function fillListRow(cdo: Cdo, containerNode: SNode, rowElement: Element, itemState: Record<string, any>): void {
+  const rowIds = new Set<number>()
+  collectSubtreeIds(containerNode, rowIds)
+  const rowContext = createRenderContext(itemState, cdo.slots)
+  const rowCache = new Map<number, Element>()
+  function indexRow(element: Element): void {
+    const dataset = (element as HTMLElement).dataset
+    if (dataset && dataset.yqNodeId) {
+      rowCache.set(parseInt(dataset.yqNodeId || '0', 10), element)
+    }
+    for (const child of Array.from(element.children)) {
+      indexRow(child)
+    }
+  }
+  indexRow(rowElement)
+  for (const childSlot of cdo.slots) {
+    if (childSlot.kind === 'list') continue
+    if (!rowIds.has(childSlot.nodeId)) continue
+    if (childSlot.nodeId === containerNode.id && childSlot.kind === 'text' && containerNode.children.length > 0) continue
+    const target = childSlot.nodeId === containerNode.id ? rowElement : rowCache.get(childSlot.nodeId)
+    if (!target) continue
+    if (childSlot.kind === 'text') {
+      fillTextSlot(target, childSlot, rowContext, cdo)
+    } else if (childSlot.kind === 'attr') {
+      fillAttrSlot(target, childSlot, rowContext)
+    } else if (childSlot.kind === 'bool') {
+      fillBoolSlot(target, childSlot, rowContext)
+    }
+  }
+}
+
+function createListItem(cdo: Cdo, slot: Extract<Slot, { kind: 'list' }>, item: any, context: RenderContext): Element {
+  const containerNode = findNode(cdo, slot.nodeId)
+  if (!containerNode) return document.createElement('div')
+  const itemState = { ...context.state, [slot.itemVar]: item }
+  const rowElement = cloneStaticNode(containerNode)
+  fillListRow(cdo, containerNode, rowElement, itemState)
+  return rowElement
+}
+
+function renderList(cdo: Cdo, node: Element, slot: Extract<Slot, { kind: 'list' }>, context: RenderContext): void {
+  const containerNode = findNode(cdo, slot.nodeId)
+  if (!containerNode) return
+  const rawItems = resolvePath(context.state, slot.itemsPath)
+  const items = Array.isArray(rawItems) ? rawItems : []
+  const existing = new Map<string, Element>()
+  for (const child of Array.from(node.children)) {
+    const key = (child as HTMLElement).dataset.yqKey
+    if (key != null) existing.set(key, child)
+  }
   const fragment = document.createDocumentFragment()
-  const existingElements = Array.from(node.children)
-  
   for (let i = 0; i < items.length; i++) {
     const item = items[i]
     const key = slot.keyProp ? String(item[slot.keyProp]) : String(i)
-    const existingElement = existingElements.find(el => (el as HTMLElement).dataset.yqKey === String(key))
-    
-    if (existingElement) {
-      const itemElement = existingElement.cloneNode(true) as HTMLElement
-      itemElement.dataset.yqKey = String(key)
-      fragment.appendChild(itemElement)
+    const existingRow = existing.get(key)
+    let rowElement: Element
+    if (existingRow) {
+      existing.delete(key)
+      rowElement = existingRow
     } else {
-      const itemElement = createListItem(cdo, slot, item, i, context) as HTMLElement
-      itemElement.dataset.yqKey = String(key)
-      fragment.appendChild(itemElement)
+      rowElement = cloneStaticNode(containerNode)
+    }
+    const itemState = { ...context.state, [slot.itemVar]: item }
+    fillListRow(cdo, containerNode, rowElement, itemState)
+    ;(rowElement as HTMLElement).dataset.yqKey = key
+    fragment.appendChild(rowElement)
+  }
+  for (const leftover of existing.values()) {
+    if (typeof (leftover as HTMLElement).remove === 'function') {
+      ;(leftover as HTMLElement).remove()
+    } else {
+      ;(leftover as HTMLElement).parentElement?.removeChild(leftover)
     }
   }
-  
   node.innerHTML = ''
   node.appendChild(fragment)
+}
+
+function fillListSlot(node: Element, slot: Extract<Slot, { kind: 'list' }>, context: RenderContext, cdo: Cdo): void {
+  renderList(cdo, node, slot, context)
 }
 
 function renderSkeleton(cdo: Cdo, container: HTMLElement): Element {
@@ -141,6 +198,9 @@ function populateNodeCache(cdo: Cdo, root: Element): Map<number, Element> {
   
   function traverse(element: Element): void {
     const dataset = (element as HTMLElement).dataset
+    if (dataset && dataset.yqKey != null) {
+      return
+    }
     if (dataset && 'yqNodeId' in dataset) {
       const nodeId = parseInt(dataset.yqNodeId || '0')
       nodeCache.set(nodeId, element)
@@ -155,20 +215,19 @@ function populateNodeCache(cdo: Cdo, root: Element): Map<number, Element> {
   return nodeCache
 }
 
-function fillSlots(cdo: Cdo, context: RenderContext): void {
-  const cache = new Map<number, Element>()
-  
-  function traverse(element: Element): void {
-    if ((element as HTMLElement).dataset.yqNodeId) {
-      const nodeId = parseInt((element as HTMLElement).dataset.yqNodeId || '0')
-      cache.set(nodeId, element)
-    }
-    
-    for (const child of Array.from(element.children)) {
-      traverse(child)
-    }
+function belongsToListItem(cdo: Cdo, nodeId: number): boolean {
+  for (const slot of cdo.slots) {
+    if (slot.kind !== 'list') continue
+    const containerNode = findNode(cdo, slot.nodeId)
+    if (!containerNode) continue
+    const rowIds = new Set<number>()
+    collectSubtreeIds(containerNode, rowIds)
+    if (rowIds.has(nodeId)) return true
   }
-  
+  return false
+}
+
+function fillSlots(cdo: Cdo, context: RenderContext): void {
   const rootNode = context.nodeCache.get(cdo.root.id)
   
   if (!rootNode) {
@@ -177,31 +236,15 @@ function fillSlots(cdo: Cdo, context: RenderContext): void {
     return
   }
   
-  traverse(rootNode)
-  
-  for (const slot of cdo.slots) {
-    const node = cache.get(slot.nodeId)
-    if (!node) continue
-    
-    if (slot.kind === 'text') {
-      fillTextSlot(node, slot, context)
-    } else if (slot.kind === 'attr') {
-      fillAttrSlot(node, slot, context)
-    } else if (slot.kind === 'bool') {
-      fillBoolSlot(node, slot, context)
-    } else if (slot.kind === 'list') {
-      fillListSlot(node, slot, context, cdo)
-    }
-  }
-}
-
-function updateSlots(cdo: Cdo, context: RenderContext): void {
   const cache = new Map<number, Element>()
   
   function traverse(element: Element): void {
-    if ((element as HTMLElement).dataset.yqNodeId) {
-      const nodeId = parseInt((element as HTMLElement).dataset.yqNodeId || '0')
-      cache.set(nodeId, element)
+    const dataset = (element as HTMLElement).dataset
+    if (dataset && dataset.yqKey != null) {
+      return
+    }
+    if (dataset && dataset.yqNodeId) {
+      cache.set(parseInt(dataset.yqNodeId || '0', 10), element)
     }
     
     for (const child of Array.from(element.children)) {
@@ -209,83 +252,62 @@ function updateSlots(cdo: Cdo, context: RenderContext): void {
     }
   }
   
-  const rootEl = context.nodeCache.get(cdo.root.id)
-  if (rootEl) {
-    traverse(rootEl)
-  }
+  traverse(rootNode)
   
   for (const slot of cdo.slots) {
+    if (slot.kind !== 'list' && belongsToListItem(cdo, slot.nodeId)) continue
     const node = cache.get(slot.nodeId)
     if (!node) continue
     
     if (slot.kind === 'text') {
-      const parts = node.textContent?.split('') || []
-      let currentText = ''
-      let needsUpdate = false
-      
-      for (let i = 0; i < parts.length; i++) {
-        if (i === slot.partIndex) {
-          const value = slot.path ? resolvePath(context.state, slot.path) : undefined
-          const newValue = String(value)
-          if (currentText.length > 0 || parts[i] !== newValue) {
-            needsUpdate = true
-          }
-          currentText += newValue
-        } else {
-          currentText += parts[i]
-        }
-      }
-      
-      if (needsUpdate) {
-        ;(node as HTMLElement).textContent = currentText
-      }
+      fillTextSlot(node, slot, context, cdo)
     } else if (slot.kind === 'attr') {
-      const value = slot.path ? resolvePath(context.state, slot.path) : undefined
-      const newValue = value != null ? String(value) : null
-      const currentValue = node.getAttribute(slot.attr)
-      if (currentValue !== newValue) {
-        if (newValue != null) {
-          node.setAttribute(slot.attr, newValue)
-        } else {
-          node.removeAttribute(slot.attr)
-        }
-      }
+      fillAttrSlot(node, slot, context)
     } else if (slot.kind === 'bool') {
-      const value = slot.path ? resolvePath(context.state, slot.path) : undefined
-      const hasAttr = node.hasAttribute(slot.attr)
-      if (value && !hasAttr) {
-        node.setAttribute(slot.attr, '')
-      } else if (!value && hasAttr) {
-        node.removeAttribute(slot.attr)
-      }
+      fillBoolSlot(node, slot, context)
     } else if (slot.kind === 'list') {
-      const items = resolvePath(context.state, slot.itemsPath) || []
-      const fragment = document.createDocumentFragment()
-      const existingElements = Array.from(node.children)
-      const remaining: Element[] = []
-      
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i]
-        const key = slot.keyProp ? String(item[slot.keyProp]) : String(i)
-        const existingIndex = existingElements.findIndex(el => (el as HTMLElement).dataset.yqKey === String(key))
-        
-        if (existingIndex !== -1) {
-          fragment.appendChild(existingElements[existingIndex])
-          existingElements.splice(existingIndex, 1)
-        } else {
-          const itemElement = createListItem(cdo, slot, item, i, context) as HTMLElement
-          itemElement.dataset.yqKey = String(key)
-          fragment.appendChild(itemElement)
-        }
-      }
-      
-      for (const el of existingElements) {
-        el.remove()
-      }
-      
-      node.appendChild(fragment)
+      renderList(cdo, node, slot, context)
     }
   }
+}
+
+function updateSlots(cdo: Cdo, context: RenderContext): void {
+  fillSlots(cdo, context)
+}
+
+function bindEvents(instance: ComponentInstance): void {
+  const handlers = instance.handlers
+  if (!handlers) return
+  if (instance.eventCleanups && instance.eventCleanups.length > 0) return
+  const cleanups: Array<() => void> = []
+  const cache = instance.context.nodeCache
+  for (const slot of instance.cdo.slots) {
+    if (slot.kind !== 'event') continue
+    if (belongsToListItem(instance.cdo, slot.nodeId)) continue
+    const element = cache.get(slot.nodeId)
+    const handler = handlers[slot.handler]
+    if (!element || !handler) continue
+    const listener = (event: Event) => {
+      try {
+        handler.call(instance.container, instance.state, event)
+      } catch (error) {
+        console.error(`[yq:event] handler "${slot.handler}" failed:`, error)
+      }
+    }
+    element.addEventListener(slot.event, listener as EventListener)
+    cleanups.push(() => {
+      element.removeEventListener(slot.event, listener as EventListener)
+    })
+  }
+  instance.eventCleanups = cleanups
+}
+
+function unbindEvents(instance: ComponentInstance): void {
+  if (!instance.eventCleanups) return
+  for (const cleanup of instance.eventCleanups) {
+    cleanup()
+  }
+  instance.eventCleanups = []
 }
 
 const styleInjections = new Map<string, StyleInjection>()
@@ -498,6 +520,83 @@ function createComponent(options: ComponentOptions): ComponentInstance {
   return instance
 }
 
+function runScriptResult(cdo: Cdo): Record<string, any> | null {
+  if (!cdo.scriptFactory) return null
+  const scriptFn = cdo.scriptFactory()
+  if (typeof scriptFn !== 'function') return null
+  const result = scriptFn()
+  if (result && typeof result === 'object') return result as Record<string, any>
+  return null
+}
+
+function extractScriptState(result: Record<string, any> | null): Record<string, any> {
+  if (!result) return {}
+  const stateValue = result.state
+  if (stateValue && typeof stateValue === 'object') {
+    return { ...stateValue }
+  }
+  return {}
+}
+
+function extractHandlers(result: Record<string, any> | null): Record<string, (...args: any[]) => any> {
+  const handlers: Record<string, (...args: any[]) => any> = {}
+  if (!result) return handlers
+  for (const key of Object.keys(result)) {
+    if (key !== 'state' && typeof result[key] === 'function') {
+      handlers[key] = result[key] as (...args: any[]) => any
+    }
+  }
+  return handlers
+}
+
+function createInstanceFromCdo(name: string, cdo: Cdo, host: HTMLElement): ComponentInstance {
+  const scriptResult = runScriptResult(cdo)
+  const state: Record<string, any> = extractScriptState(scriptResult)
+  const handlers = extractHandlers(scriptResult)
+  const derivedStates: Record<string, any> = {}
+  const effects: (() => void)[] = []
+  const context = createRenderContext(state, cdo.slots)
+  
+  if ('innerHTML' in host) {
+    host.innerHTML = ''
+  }
+  const root = renderSkeleton(cdo, host)
+  context.nodeCache = populateNodeCache(cdo, root)
+  
+  const debugManager = getDebugManager()
+  const instance: ComponentInstance = {
+    name,
+    state,
+    derivedStates,
+    effects,
+    context,
+    cdo,
+    container: host,
+    root,
+    lifecycleHooks: {},
+    lifecycleState: 'created',
+    children: [],
+    parent: null,
+    updateLogs: [],
+    errorInfo: null,
+    errorBoundary: null,
+    hasError: false,
+    errorCount: 0,
+    lastErrorTime: null,
+    autoSync: true,
+    handlers
+  }
+  
+  instance.state = createStateProxy(state, () => {
+    if (instance.lifecycleState === 'unmounted') return
+    updateComponent(instance)
+  })
+  
+  debugManager.trackComponent(instance)
+  
+  return instance
+}
+
 function mountComponent(instance: ComponentInstance): void {
   if (instance.lifecycleState !== 'created') {
     console.warn(`[yq:lifecycle] Component ${instance.name} is already mounted`)
@@ -507,7 +606,7 @@ function mountComponent(instance: ComponentInstance): void {
   try {
     fillSlots(instance.cdo, instance.context)
     
-    if (instance.cdo.scriptFactory) {
+    if (instance.cdo.scriptFactory && !instance.autoSync) {
       const scriptFn = instance.cdo.scriptFactory()
       if (typeof scriptFn === 'function') {
         scriptFn()
@@ -625,6 +724,7 @@ function unmountComponent(instance: ComponentInstance): void {
   }
   
   try {
+    unbindEvents(instance)
     for (const child of instance.children) {
       unmountComponent(child)
     }
@@ -775,9 +875,12 @@ export {
   clearGlobalStyles,
   createScopedElement,
   cloneStaticNode,
+  createInstanceFromCdo,
   fillTextSlot,
   fillAttrSlot,
   fillBoolSlot,
   createListItem,
-  fillListSlot
+  fillListSlot,
+  bindEvents,
+  unbindEvents
 }

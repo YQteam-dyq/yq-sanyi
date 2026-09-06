@@ -198,6 +198,6 @@ setTimeout(() => {
 
 ## 下一步
 
-- 阅读 README 中的 [API 一览](../README.zh-CN.md#api-一览)。
+- 阅读 README 中的 [v0.1.0 现有能力](../README.zh-CN.md#v010-现有能力)。
 - 打开 `examples/full-demo.html` 完整示例，查看表单、列表与条件渲染的组合。
 - 阅读本教程英文版：[English Tutorial](./tutorial.md)。

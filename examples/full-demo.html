@@ -1,656 +1,162 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>yq-sanyi 全链路演示</title>
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            margin: 0;
-            padding: 20px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-        }
-        
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-            padding: 30px;
-        }
-        
-        .header {
-            text-align: center;
-            margin-bottom: 40px;
-            padding: 20px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border-radius: 8px;
-        }
-        
-        .demo-section {
-            margin-bottom: 40px;
-            padding: 20px;
-            border: 2px solid #e2e8f0;
-            border-radius: 8px;
-            background: #f8fafc;
-        }
-        
-        .demo-section h2 {
-            color: #2d3748;
-            margin-top: 0;
-            border-bottom: 2px solid #667eea;
-            padding-bottom: 10px;
-        }
-        
-        .feature-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 20px;
-            margin-top: 20px;
-        }
-        
-        .feature-card {
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-            transition: transform 0.2s;
-        }
-        
-        .feature-card:hover {
-            transform: translateY(-2px);
-        }
-        
-        .counter-display {
-            font-size: 48px;
-            font-weight: bold;
-            text-align: center;
-            color: #667eea;
-            margin: 20px 0;
-        }
-        
-        .todo-item {
-            background: white;
-            padding: 15px;
-            margin: 10px 0;
-            border-radius: 8px;
-            border-left: 4px solid #667eea;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-        }
-        
-        .todo-item.completed {
-            opacity: 0.6;
-            text-decoration: line-through;
-        }
-        
-        .form-group {
-            margin-bottom: 15px;
-        }
-        
-        .form-group label {
-            display: block;
-            margin-bottom: 5px;
-            font-weight: 600;
-            color: #2d3748;
-        }
-        
-        .form-group input, .form-group textarea {
-            width: 100%;
-            padding: 10px;
-            border: 2px solid #e2e8f0;
-            border-radius: 6px;
-            font-size: 16px;
-        }
-        
-        .form-group input:focus, .form-group textarea:focus {
-            outline: none;
-            border-color: #667eea;
-        }
-        
-        .btn {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            padding: 12px 24px;
-            border-radius: 6px;
-            font-size: 16px;
-            cursor: pointer;
-            transition: transform 0.2s;
-        }
-        
-        .btn:hover {
-            transform: translateY(-1px);
-        }
-        
-        .btn:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-        }
-        
-        .stats {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 15px;
-            margin-top: 20px;
-        }
-        
-        .stat-card {
-            background: white;
-            padding: 15px;
-            border-radius: 8px;
-            text-align: center;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-        }
-        
-        .stat-value {
-            font-size: 24px;
-            font-weight: bold;
-            color: #667eea;
-        }
-        
-        .stat-label {
-            font-size: 14px;
-            color: #718096;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>yq-sanyi 声明式示例</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 24px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f1f5f9;
+      color: #1e293b;
+    }
+    header {
+      max-width: 900px;
+      margin: 0 auto 24px;
+      padding: 24px;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      color: #fff;
+      border-radius: 12px;
+    }
+    header h1 { margin: 0 0 8px; }
+    header p { margin: 0; opacity: 0.9; }
+    main {
+      max-width: 900px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+    .section-title {
+      color: #6366f1;
+      margin: 8px 0 12px;
+      font-size: 14px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+    yq-greeting,
+    yq-clock,
+    yq-counter,
+    yq-user-list {
+      display: block;
+    }
+    .row {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .row > * {
+      flex: 1 1 220px;
+    }
+    .demo-note {
+      max-width: 900px;
+      margin: 24px auto 0;
+      padding: 16px;
+      border: 1px dashed #cbd5e1;
+      border-radius: 8px;
+      background: #fff;
+      font-size: 13px;
+      color: #475569;
+      line-height: 1.8;
+    }
+  </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>yq-sanyi 全链路演示</h1>
-            <p>零依赖 · 三合一 · 响应式现代Web框架</p>
-        </div>
-        
+  <header>
+    <h1>yq-sanyi 声明式示例</h1>
+    <p>定义一次组件，然后直接以 HTML 标签使用，无需任何挂载代码。</p>
+  </header>
 
-        <div class="demo-section">
-            <h2>基础文本绑定</h2>
-            <div class="feature-grid">
-                <div class="feature-card">
-                    <h3>动态标题</h3>
-                    <p>{{ appTitle }}</p>
-                </div>
-                <div class="feature-card">
-                    <h3>欢迎消息</h3>
-                    <p>{{ welcomeMessage }}</p>
-                </div>
-                <div class="feature-card">
-                    <h3>实时状态</h3>
-                    <p>当前时间: {{ currentTime }}</p>
-                </div>
-            </div>
-        </div>
-        
-
-        <div class="demo-section">
-            <h2>属性绑定</h2>
-            <div class="feature-grid">
-                <div class="feature-card">
-                    <h3>输入框</h3>
-                    <input type="text" placeholder="输入内容" value="{{ inputValue }}" />
-                    <p>输入值: {{ inputValue }}</p>
-                </div>
-                <div class="feature-card">
-                    <h3>按钮状态</h3>
-                    <button disabled="{{ isButtonDisabled }}">提交按钮</button>
-                    <p>按钮状态: {{ buttonStatus }}</p>
-                </div>
-                <div class="feature-card">
-                    <h3>图片属性</h3>
-                    <img src="{{ imageUrl }}" alt="示例图片" style="max-width: 100px;" />
-                </div>
-            </div>
-        </div>
-        
-
-        <div class="demo-section">
-            <h2>列表渲染</h2>
-            <div class="feature-grid">
-                <div class="feature-card">
-                    <h3>用户列表</h3>
-                    <ul>
-                        <li yq-for="user in users">
-                            {{ user.name }} - {{ user.age }}岁
-                            <span yq-if="user.isVip">VIP</span>
-                        </li>
-                    </ul>
-                </div>
-                <div class="feature-card">
-                    <h3>产品列表</h3>
-                    <div>
-                        <div yq-for="product in products">
-                            <h4>{{ product.name }}</h4>
-                            <p>价格: ¥{{ product.price }}</p>
-                            <p>库存: {{ product.stock }}</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-
-        <div class="demo-section">
-            <h2>响应式计数器</h2>
-            <div class="feature-card">
-                <div class="counter-display">{{ count }}</div>
-                <div class="form-group">
-                    <button class="btn" onclick="increment()">+1</button>
-                    <button class="btn" onclick="decrement()">-1</button>
-                    <button class="btn" onclick="reset()">重置</button>
-                </div>
-                <div class="stats">
-                    <div class="stat-card">
-                        <div class="stat-value">{{ clickCount }}</div>
-                        <div class="stat-label">点击次数</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-value">{{ evenOdd }}</div>
-                        <div class="stat-label">奇偶性</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-
-        <div class="demo-section">
-            <h2>待办事项管理</h2>
-            <div class="feature-card">
-                <div class="form-group">
-                    <input type="text" id="todoInput" placeholder="添加新任务" />
-                    <button class="btn" onclick="addTodo()">添加任务</button>
-                </div>
-                <div>
-                    <h3>任务列表 ({{ todos.length }})</h3>
-                    <div yq-for="todo in todos">
-                        <div class="todo-item {{ todo.completed ? 'completed' : '' }}">
-                            <input type="checkbox" yq-model="todo.completed" />
-                            <span>{{ todo.text }}</span>
-                            <button onclick="removeTodo(todo.id)">删除</button>
-                        </div>
-                    </div>
-                </div>
-                <div class="stats">
-                    <div class="stat-card">
-                        <div class="stat-value">{{ completedCount }}</div>
-                        <div class="stat-label">已完成</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-value">{{ pendingCount }}</div>
-                        <div class="stat-label">待完成</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-value">{{ completionRate }}%</div>
-                        <div class="stat-label">完成率</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-
-        <div class="demo-section">
-            <h2>表单处理</h2>
-            <div class="feature-card">
-                <form onsubmit="handleSubmit(event)">
-                    <div class="form-group">
-                        <label>姓名:</label>
-                        <input type="text" yq-model="formData.name" required />
-                    </div>
-                    <div class="form-group">
-                        <label>邮箱:</label>
-                        <input type="email" yq-model="formData.email" required />
-                    </div>
-                    <div class="form-group">
-                        <label>年龄:</label>
-                        <input type="number" yq-model="formData.age" min="1" max="120" />
-                    </div>
-                    <div class="form-group">
-                        <label>留言:</label>
-                        <textarea yq-model="formData.message" rows="4"></textarea>
-                    </div>
-                    <button type="submit" class="btn">提交表单</button>
-                </form>
-                
-                <div yq-if="formDataSubmitted">
-                    <h3>表单数据:</h3>
-                    <pre>{{ formDataDisplay }}</pre>
-                </div>
-            </div>
-        </div>
-        
-
-        <div class="demo-section">
-            <h2>实时数据监控</h2>
-            <div class="feature-grid">
-                <div class="feature-card">
-                    <h3>系统状态</h3>
-                    <p>内存使用: {{ memoryUsage }}%</p>
-                    <p>CPU使用: {{ cpuUsage }}%</p>
-                    <p>网络状态: {{ networkStatus }}</p>
-                </div>
-                <div class="feature-card">
-                    <h3>性能指标</h3>
-                    <p>页面加载时间: {{ loadTime }}ms</p>
-                    <p>渲染次数: {{ renderCount }}</p>
-                    <p>内存峰值: {{ memoryPeak }}MB</p>
-                </div>
-            </div>
-        </div>
+  <main>
+    <div>
+      <div class="section-title">文本绑定与组件内部样式</div>
+      <div class="row">
+        <yq-greeting></yq-greeting>
+        <yq-clock></yq-clock>
+      </div>
     </div>
 
-    <script src="../packages/core/dist/core.global.js"></script>
-    
-    <script>
+    <div>
+      <div class="section-title">事件绑定与自动更新（改 state 就地重渲染）</div>
+      <div class="row">
+        <yq-counter></yq-counter>
+        <yq-counter></yq-counter>
+      </div>
+    </div>
 
-        const globalState = {
-            appTitle: 'yq-sanyi 全链路演示',
-            welcomeMessage: '欢迎使用零依赖现代Web框架！',
-            currentTime: new Date().toLocaleString(),
-            inputValue: '',
-            isButtonDisabled: false,
-            imageUrl: 'https://via.placeholder.com/150',
-            count: 0,
-            clickCount: 0,
+    <div>
+      <div class="section-title">列表渲染 yq-for</div>
+      <yq-user-list></yq-user-list>
+    </div>
+  </main>
+
+  <p class="demo-note">
+    页面上的每个自定义标签都是独立组件实例：两个计数器互不影响；组件样式各自隔离；
+    标签从页面移除时组件自动清理。标签名必须包含连字符（如 yq-counter），
+    这是浏览器对自定义元素的硬性要求。
+  </p>
+
+  <script src="../packages/core/dist/core.global.js"></script>
+  <script>
+    yq.define('yq-greeting', {
+      template: '<div class="card greeting"><h3>{{ title }}</h3><p>{{ message }}</p></div>',
+      style: '.card { border-left: 4px solid #10b981; }',
+      script: function () {
+        return {
+          state: {
+            title: '你好，yq-sanyi',
+            message: '零依赖、无构建，组件即 HTML 标签。'
+          }
+        }
+      }
+    })
+
+    yq.define('yq-clock', {
+      template: '<div class="card clock"><span class="label">当前时间</span><b>{{ now }}</b><button yq-on:click="refresh">刷新</button></div>',
+      style: '.card { border-left: 4px solid #6366f1; }',
+      script: function () {
+        return {
+          state: { now: new Date().toLocaleTimeString() },
+          refresh: function (state) {
+            state.now = new Date().toLocaleTimeString()
+          }
+        }
+      }
+    })
+
+    yq.define('yq-counter', {
+      template: '<div class="card counter"><b>{{ count }}</b><button yq-on:click="dec">-</button><button yq-on:click="inc">+</button></div>',
+      style: '.card { border-left: 4px solid #f59e0b; }',
+      script: function () {
+        return {
+          state: { count: 0 },
+          inc: function (state) {
+            state.count = state.count + 1
+          },
+          dec: function (state) {
+            state.count = state.count - 1
+          }
+        }
+      }
+    })
+
+    yq.define('yq-user-list', {
+      template: '<div class="card list"><div yq-for="user in users"><div class="user"><span>{{ user.name }}</span><em>{{ user.role }}</em></div></div></div>',
+      style: '.card { border-left: 4px solid #ec4899; }',
+      script: function () {
+        return {
+          state: {
             users: [
-                { name: '张三', age: 25, isVip: true },
-                { name: '李四', age: 30, isVip: false },
-                { name: '王五', age: 28, isVip: true }
-            ],
-            products: [
-                { name: '笔记本电脑', price: 5999, stock: 10 },
-                { name: '智能手机', price: 3999, stock: 25 },
-                { name: '平板电脑', price: 2999, stock: 15 }
-            ],
-            todos: [],
-            formData: {
-                name: '',
-                email: '',
-                age: '',
-                message: ''
-            },
-            formDataSubmitted: false,
-            memoryUsage: 45,
-            cpuUsage: 23,
-            networkStatus: '正常',
-            loadTime: 1250,
-            renderCount: 0,
-            memoryPeak: 128
+              { name: '张三', role: '前端工程师' },
+              { name: '李四', role: '后端工程师' },
+              { name: '王五', role: '产品经理' }
+            ]
+          }
         }
-        
-
-        const mainApp = createComponent({
-            name: 'main-app',
-            template: `
-                <div class="container">
-                    <div class="header">
-                        <h1>{{ appTitle }}</h1>
-                        <p>{{ welcomeMessage }}</p>
-                    </div>
-                    
-                    <!-- 基础文本绑定演示 -->
-                    <div class="demo-section">
-                        <h2>基础文本绑定</h2>
-                        <div class="feature-grid">
-                            <div class="feature-card">
-                                <h3>动态标题</h3>
-                                <p>{{ appTitle }}</p>
-                            </div>
-                            <div class="feature-card">
-                                <h3>欢迎消息</h3>
-                                <p>{{ welcomeMessage }}</p>
-                            </div>
-                            <div class="feature-card">
-                                <h3>实时状态</h3>
-                                <p>当前时间: {{ currentTime }}</p>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- 属性绑定演示 -->
-                    <div class="demo-section">
-                        <h2>属性绑定</h2>
-                        <div class="feature-grid">
-                            <div class="feature-card">
-                                <h3>输入框</h3>
-                                <input type="text" placeholder="输入内容" value="{{ inputValue }}" />
-                                <p>输入值: {{ inputValue }}</p>
-                            </div>
-                            <div class="feature-card">
-                                <h3>按钮状态</h3>
-                                <button disabled="{{ isButtonDisabled }}">提交按钮</button>
-                                <p>按钮状态: {{ buttonStatus }}</p>
-                            </div>
-                            <div class="feature-card">
-                                <h3>图片属性</h3>
-                                <img src="{{ imageUrl }}" alt="示例图片" style="max-width: 100px;" />
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- 列表渲染演示 -->
-                    <div class="demo-section">
-                        <h2>列表渲染</h2>
-                        <div class="feature-grid">
-                            <div class="feature-card">
-                                <h3>用户列表</h3>
-                                <ul>
-                                    <li yq-for="user in users">
-                                        {{ user.name }} - {{ user.age }}岁
-                                        <span yq-if="user.isVip">VIP</span>
-                                    </li>
-                                </ul>
-                            </div>
-                            <div class="feature-card">
-                                <h3>产品列表</h3>
-                                <div>
-                                    <div yq-for="product in products">
-                                        <h4>{{ product.name }}</h4>
-                                        <p>价格: ¥{{ product.price }}</p>
-                                        <p>库存: {{ product.stock }}</p>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- 计数器演示 -->
-                    <div class="demo-section">
-                        <h2>响应式计数器</h2>
-                        <div class="feature-card">
-                            <div class="counter-display">{{ count }}</div>
-                            <div class="form-group">
-                                <button class="btn" onclick="increment()">+1</button>
-                                <button class="btn" onclick="decrement()">-1</button>
-                                <button class="btn" onclick="reset()">重置</button>
-                            </div>
-                            <div class="stats">
-                                <div class="stat-card">
-                                    <div class="stat-value">{{ clickCount }}</div>
-                                    <div class="stat-label">点击次数</div>
-                                </div>
-                                <div class="stat-card">
-                                    <div class="stat-value">{{ evenOdd }}</div>
-                                    <div class="stat-label">奇偶性</div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- 待办事项演示 -->
-                    <div class="demo-section">
-                        <h2>待办事项管理</h2>
-                        <div class="feature-card">
-                            <div class="form-group">
-                                <input type="text" id="todoInput" placeholder="添加新任务" />
-                                <button class="btn" onclick="addTodo()">添加任务</button>
-                            </div>
-                            <div>
-                                <h3>任务列表 ({{ todos.length }})</h3>
-                                <div yq-for="todo in todos">
-                                    <div class="todo-item {{ todo.completed ? 'completed' : '' }}">
-                                        <input type="checkbox" yq-model="todo.completed" />
-                                        <span>{{ todo.text }}</span>
-                                        <button onclick="removeTodo(todo.id)">删除</button>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="stats">
-                                <div class="stat-card">
-                                    <div class="stat-value">{{ completedCount }}</div>
-                                    <div class="stat-label">已完成</div>
-                                </div>
-                                <div class="stat-card">
-                                    <div class="stat-value">{{ pendingCount }}</div>
-                                    <div class="stat-label">待完成</div>
-                                </div>
-                                <div class="stat-card">
-                                    <div class="stat-value">{{ completionRate }}%</div>
-                                    <div class="stat-label">完成率</div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- 表单演示 -->
-                    <div class="demo-section">
-                        <h2>表单处理</h2>
-                        <div class="feature-card">
-                            <form onsubmit="handleSubmit(event)">
-                                <div class="form-group">
-                                    <label>姓名:</label>
-                                    <input type="text" yq-model="formData.name" required />
-                                </div>
-                                <div class="form-group">
-                                    <label>邮箱:</label>
-                                    <input type="email" yq-model="formData.email" required />
-                                </div>
-                                <div class="form-group">
-                                    <label>年龄:</label>
-                                    <input type="number" yq-model="formData.age" min="1" max="120" />
-                                </div>
-                                <div class="form-group">
-                                    <label>留言:</label>
-                                    <textarea yq-model="formData.message" rows="4"></textarea>
-                                </div>
-                                <button type="submit" class="btn">提交表单</button>
-                            </form>
-                            
-                            <div yq-if="formDataSubmitted">
-                                <h3>表单数据:</h3>
-                                <pre>{{ formDataDisplay }}</pre>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- 实时数据演示 -->
-                    <div class="demo-section">
-                        <h2>实时数据监控</h2>
-                        <div class="feature-grid">
-                            <div class="feature-card">
-                                <h3>系统状态</h3>
-                                <p>内存使用: {{ memoryUsage }}%</p>
-                                <p>CPU使用: {{ cpuUsage }}%</p>
-                                <p>网络状态: {{ networkStatus }}</p>
-                            </div>
-                            <div class="feature-card">
-                                <h3>性能指标</h3>
-                                <p>页面加载时间: {{ loadTime }}ms</p>
-                                <p>渲染次数: {{ renderCount }}</p>
-                                <p>内存峰值: {{ memoryPeak }}MB</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            `,
-            script: () => ({
-                state: globalState,
-                derived: {
-                    buttonStatus: (state) => state.isButtonDisabled ? '禁用' : '启用',
-                    evenOdd: (state) => state.count % 2 === 0 ? '偶数' : '奇数',
-                    completedCount: (state) => state.todos.filter(todo => todo.completed).length,
-                    pendingCount: (state) => state.todos.filter(todo => !todo.completed).length,
-                    completionRate: (state) => {
-                        const total = state.todos.length
-                        const completed = state.todos.filter(todo => todo.completed).length
-                        return total === 0 ? 0 : Math.round((completed / total) * 100)
-                    },
-                    formDataDisplay: (state) => JSON.stringify(state.formData, null, 2)
-                },
-                effect: () => {
-
-                    const timeInterval = setInterval(() => {
-                        globalState.currentTime = new Date().toLocaleString()
-                    }, 1000)
-                    
-
-                    const statusInterval = setInterval(() => {
-                        globalState.memoryUsage = Math.floor(Math.random() * 100)
-                        globalState.cpuUsage = Math.floor(Math.random() * 100)
-                        globalState.networkStatus = Math.random() > 0.1 ? '正常' : '异常'
-                        globalState.renderCount++
-                    }, 3000)
-                    
-                    return () => {
-                        clearInterval(timeInterval)
-                        clearInterval(statusInterval)
-                    }
-                }
-            }),
-            container: document.body
-        })
-        
-
-        window.increment = () => {
-            globalState.count++
-            globalState.clickCount++
-        }
-        
-        window.decrement = () => {
-            globalState.count--
-            globalState.clickCount++
-        }
-        
-        window.reset = () => {
-            globalState.count = 0
-            globalState.clickCount = 0
-        }
-        
-        window.addTodo = () => {
-            const input = document.getElementById('todoInput')
-            const text = input.value.trim()
-            if (text) {
-                globalState.todos.push({
-                    id: Date.now(),
-                    text: text,
-                    completed: false
-                })
-                input.value = ''
-            }
-        }
-        
-        window.removeTodo = (id) => {
-            globalState.todos = globalState.todos.filter(todo => todo.id !== id)
-        }
-        
-        window.handleSubmit = (event) => {
-            event.preventDefault()
-            globalState.formDataSubmitted = true
-        }
-        
-
-        mountComponent(mainApp)
-        
-        console.log('yq-sanyi 全链路演示已启动！')
-        console.log('包含功能:')
-        console.log('- 基础文本绑定')
-        console.log('- 属性绑定')
-        console.log('- 列表渲染')
-        console.log('- 响应式计数器')
-        console.log('- 待办事项管理')
-        console.log('- 表单处理')
-        console.log('- 实时数据监控')
-    </script>
+      }
+    })
+  </script>
 </body>
 </html>
