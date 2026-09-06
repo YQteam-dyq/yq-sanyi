@@ -10,6 +10,11 @@ function findNode(cdo: Cdo, nodeId: number): SNode | null {
   return null
 }
 
+function isNestedInstanceHost(element: Element): boolean {
+  const el = element as unknown as { _yqInstance?: unknown }
+  return Boolean(el._yqInstance)
+}
+
 function composeText(snode: SNode, state: Record<string, any>): string {
   let out = ''
   for (const part of snode.text) {
@@ -97,6 +102,7 @@ function fillListRow(cdo: Cdo, containerNode: SNode, rowElement: Element, itemSt
   const rowContext = createRenderContext(itemState, cdo.slots)
   const rowCache = new Map<number, Element>()
   function indexRow(element: Element): void {
+    if (isNestedInstanceHost(element)) return
     const dataset = (element as HTMLElement).dataset
     if (dataset && dataset.yqNodeId) {
       rowCache.set(parseInt(dataset.yqNodeId || '0', 10), element)
@@ -201,6 +207,9 @@ function populateNodeCache(cdo: Cdo, root: Element): Map<number, Element> {
     if (dataset && dataset.yqKey != null) {
       return
     }
+    if (isNestedInstanceHost(element)) {
+      return
+    }
     if (dataset && 'yqNodeId' in dataset) {
       const nodeId = parseInt(dataset.yqNodeId || '0')
       nodeCache.set(nodeId, element)
@@ -241,6 +250,9 @@ function fillSlots(cdo: Cdo, context: RenderContext): void {
   function traverse(element: Element): void {
     const dataset = (element as HTMLElement).dataset
     if (dataset && dataset.yqKey != null) {
+      return
+    }
+    if (isNestedInstanceHost(element)) {
       return
     }
     if (dataset && dataset.yqNodeId) {
@@ -340,8 +352,16 @@ function generateScopedCSS(cssText: string, scopeId: string): string {
   return scopedCSS
 }
 
+function hashStyleKey(cssText: string, scopeId: string): string {
+  let hash = 5381
+  for (let i = 0; i < cssText.length; i++) {
+    hash = (hash * 33) ^ cssText.charCodeAt(i)
+  }
+  return `${scopeId}-${cssText.length}-${(hash >>> 0).toString(36)}`
+}
+
 function injectStyle(cssText: string, scopeId: string): StyleInjection {
-  const id = `${scopeId}-${cssText.length}-${Date.now()}`
+  const id = hashStyleKey(cssText, scopeId)
   
   const existing = styleInjections.get(id)
   if (existing) {
@@ -587,10 +607,19 @@ function createInstanceFromCdo(name: string, cdo: Cdo, host: HTMLElement): Compo
     handlers
   }
   
-  instance.state = createStateProxy(state, () => {
+  let updateScheduled = false
+  const requestUpdate = (): void => {
+    if (updateScheduled) return
     if (instance.lifecycleState === 'unmounted') return
-    updateComponent(instance)
-  })
+    updateScheduled = true
+    Promise.resolve().then(() => {
+      updateScheduled = false
+      if (instance.lifecycleState === 'unmounted') return
+      updateComponent(instance)
+    })
+  }
+
+  instance.state = createStateProxy(state, requestUpdate)
   
   debugManager.trackComponent(instance)
   
