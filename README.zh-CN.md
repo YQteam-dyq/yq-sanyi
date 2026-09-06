@@ -176,6 +176,14 @@ npm run check:all
 - `npm run bench` — 对照 §7.4 预算运行性能基准
 - `npm run check:all` — 依赖图与包体积门禁
 
+## 支持我们
+
+yq-sanyi 由我们在业余时间开发与维护。如果它帮你节省了时间，欢迎支持项目：
+
+- 爱发电：[https://afdian.com/a/yqteam?utm_source=copylink&utm_medium=link](https://afdian.com/a/yqteam?utm_source=copylink&utm_medium=link)
+
+你的支持将帮助框架保持免费、开源与零依赖。
+
 ## 许可证
 
 Apache License 2.0。Copyright 2026 YQteam-dyq。详见 [LICENSE](./LICENSE)。
