@@ -2,6 +2,7 @@ export const version = '0.1.0'
 
 import { getDebugManager } from './debug-manager-simple.js'
 import { ErrorBoundary } from './error-boundary.js'
+import { registerElement } from './elements.js'
 
 export interface ComponentDefinition {
   readonly name: string
@@ -28,6 +29,7 @@ export type Slot =
   | { kind: 'text'; nodeId: number; partIndex: number; path?: string[] }
   | { kind: 'attr'; nodeId: number; attr: string; path?: string[] }
   | { kind: 'bool'; nodeId: number; attr: string; path?: string[] }
+  | { kind: 'event'; nodeId: number; event: string; handler: string }
   | { kind: 'list'; nodeId: number; itemVar: string; itemsPath: string[]; keyProp: string | null }
 export interface Cdo {
   name: string
@@ -132,6 +134,9 @@ export interface ComponentInstance {
   hasError: boolean
   errorCount: number
   lastErrorTime: number | null
+  autoSync?: boolean
+  handlers?: Record<string, (...args: any[]) => any>
+  eventCleanups?: Array<() => void>
 }
 
 export function createRenderContext(state: Record<string, any>, slots: Slot[]): RenderContext {
@@ -154,6 +159,53 @@ export function resolvePath(state: Record<string, any>, path?: string[]): any {
     }
   }
   return current
+}
+
+const RESERVED_ELEMENT_NAMES = new Set(['annotation-xml', 'color-profile', 'font-face', 'font-face-src', 'font-face-uri', 'font-face-format', 'font-face-name', 'missing-glyph'])
+
+export function isValidTagName(name: string): boolean {
+  if (typeof name !== 'string' || name.length === 0) return false
+  if (!/^[a-z][a-z0-9._-]*$/.test(name)) return false
+  if (!name.includes('-')) return false
+  return !RESERVED_ELEMENT_NAMES.has(name)
+}
+
+export function createStateProxy<T extends object>(target: T, onChange: () => void): T {
+  if (target === null || typeof target !== 'object') return target
+  const proxyCache = new WeakMap<object, object>()
+
+  function wrap<T2 extends object>(value: T2): T2 {
+    if (value === null || typeof value !== 'object') return value
+    const cached = proxyCache.get(value)
+    if (cached) return cached as T2
+    const proxy = new Proxy(value, {
+      get(t, key, receiver) {
+        const raw = Reflect.get(t, key, receiver)
+        if (typeof raw === 'function') {
+          if (typeof key === 'symbol') return raw
+          return raw.bind(receiver)
+        }
+        if (raw !== null && typeof raw === 'object') {
+          return wrap(raw)
+        }
+        return raw
+      },
+      set(t, key, newValue, receiver) {
+        const result = Reflect.set(t, key, newValue, receiver)
+        if (result) onChange()
+        return result
+      },
+      deleteProperty(t, key) {
+        const result = Reflect.deleteProperty(t, key)
+        if (result) onChange()
+        return result
+      }
+    }) as T2
+    proxyCache.set(value, proxy)
+    return proxy
+  }
+
+  return wrap(target)
 }
 
 const definitions = new Map<string, ComponentDefinition>()
@@ -253,6 +305,30 @@ function parseTemplate(name: string, template: string): { root: SNode; nodes: SN
     throw new Error(`[yq:parse] ${name}: ${message}`)
   }
 
+  function handleAttr(node: SNode, attr: string, value: string): void {
+    if (attr === 'yq-for') {
+      if (inList) error('nested yq-for not allowed')
+      inList = true
+      node.list = parseListSpec(value, node.staticAttrs['yq-key'] || null)
+      delete node.staticAttrs['yq-key']
+    } else if (attr === 'yq-key') {
+      if (!node.list) error('yq-key without yq-for')
+      node.list.keyProp = value
+    } else if (attr.startsWith('yq-on:')) {
+      const eventName = attr.substring('yq-on:'.length)
+      if (eventName.length === 0) error('empty event name in yq-on')
+      if (value.trim().length === 0) error('empty handler in yq-on:' + eventName)
+      slots.push({ kind: 'event', nodeId: node.id, event: eventName, handler: value.trim() })
+    } else {
+      const dynValue = parseAttributeValue(value, attr, slots, node.id)
+      if (dynValue.length === 1 && 'static' in dynValue[0] && dynValue[0].static === value) {
+        node.staticAttrs[attr] = value
+      } else {
+        node.dynAttrs[attr] = dynValue
+      }
+    }
+  }
+
   function parseNode(html: string): { node: SNode; remaining: string } {
     const node: SNode = {
       id: nodeId++,
@@ -294,22 +370,7 @@ function parseTemplate(name: string, template: string): { root: SNode; nodes: SN
         if (char === inQuote) {
           inQuote = null
           const value = currentAttrValue.join('')
-          if (currentAttr === 'yq-for') {
-            if (inList) error('nested yq-for not allowed')
-            inList = true
-            node.list = parseListSpec(value, node.staticAttrs['yq-key'] || null)
-            delete node.staticAttrs['yq-key']
-          } else if (currentAttr === 'yq-key') {
-            if (!node.list) error('yq-key without yq-for')
-            node.list.keyProp = value
-          } else {
-            const dynValue = parseAttributeValue(value, currentAttr, slots, node.id)
-            if (dynValue.length === 1 && 'static' in dynValue[0] && dynValue[0].static === value) {
-              node.staticAttrs[currentAttr] = value
-            } else {
-              node.dynAttrs[currentAttr] = dynValue
-            }
-          }
+          handleAttr(node, currentAttr, value)
           currentAttr = ''
           currentAttrValue = []
         } else {
@@ -345,22 +406,7 @@ function parseTemplate(name: string, template: string): { root: SNode; nodes: SN
       } else if (/[ \t\n\r]/.test(char)) {
         if (currentAttr.length > 0) {
           const value = currentAttrValue.join('')
-          if (currentAttr === 'yq-for') {
-            if (inList) error('nested yq-for not allowed')
-            inList = true
-            node.list = parseListSpec(value, node.staticAttrs['yq-key'] || null)
-            delete node.staticAttrs['yq-key']
-          } else if (currentAttr === 'yq-key') {
-            if (!node.list) error('yq-key without yq-for')
-            node.list.keyProp = value
-          } else {
-            const dynValue = parseAttributeValue(value, currentAttr, slots, node.id)
-            if (dynValue.length === 1 && 'static' in dynValue[0] && dynValue[0].static === value) {
-              node.staticAttrs[currentAttr] = value
-            } else {
-              node.dynAttrs[currentAttr] = dynValue
-            }
-          }
+          handleAttr(node, currentAttr, value)
           currentAttr = ''
           currentAttrValue = []
         }
@@ -378,22 +424,7 @@ function parseTemplate(name: string, template: string): { root: SNode; nodes: SN
     if (inQuote) error('unclosed attribute quote')
     if (currentAttr.length > 0) {
       const value = currentAttrValue.join('')
-      if (currentAttr === 'yq-for') {
-        if (inList) error('nested yq-for not allowed')
-        inList = true
-        node.list = parseListSpec(value, node.staticAttrs['yq-key'] || null)
-        delete node.staticAttrs['yq-key']
-      } else if (currentAttr === 'yq-key') {
-        if (!node.list) error('yq-key without yq-for')
-        node.list.keyProp = value
-      } else {
-        const dynValue = parseAttributeValue(value, currentAttr, slots, node.id)
-        if (dynValue.length === 1 && 'static' in dynValue[0] && dynValue[0].static === value) {
-          node.staticAttrs[currentAttr] = value
-        } else {
-          node.dynAttrs[currentAttr] = dynValue
-        }
-      }
+      handleAttr(node, currentAttr, value)
     }
 
     if (node.list) {
@@ -757,6 +788,7 @@ function define(name: string, definition: ComponentDefinition): ComponentDefinit
     throw new Error('duplicate component definition: ' + name)
   }
   definitions.set(name, definition)
+  registerElement(name)
   return definition
 }
 

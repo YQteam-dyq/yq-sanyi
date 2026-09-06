@@ -5,25 +5,38 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>yq-sanyi basic example</title>
 <style>
-body { font-family: system-ui, sans-serif; max-width: 40rem; margin: 2rem auto; padding: 0 1rem; }
-#status { padding: 1rem; border: 1px solid #ccc; border-radius: 0.5rem; }
-.ok { color: #0a7d32; }
-.fail { color: #b3261e; }
+body { font-family: system-ui, sans-serif; max-width: 40rem; margin: 2rem auto; padding: 0 1rem; color: #1e293b; }
+h1 { font-size: 1.5rem; }
+p.note { color: #64748b; font-size: 0.9rem; }
+yq-pill { display: block; margin: 1rem 0; }
 </style>
 </head>
 <body>
-<h1>yq-sanyi phase 1 example</h1>
-<p>core is loaded from a plain script tag, no build step and no runtime third-party code</p>
-<div id="status">waiting</div>
+<h1>yq-sanyi basic example</h1>
+<p>Define a component once, then use it as a plain HTML tag. No build step, no mount code.</p>
+
+<yq-pill></yq-pill>
+
+<p class="note">runtime version <span id="version"></span> — click the buttons above.</p>
+
 <script src="../packages/core/dist/core.global.js"></script>
 <script>
-const entry = { name: 'demo-pill', template: '<span>hello</span>' };
-window.yq.define('demo-pill', entry);
-const found = window.yq.lookup('demo-pill');
-const ok = found === entry && typeof window.yq.version === 'string';
-const box = document.getElementById('status');
-box.classList.add(ok ? 'ok' : 'fail');
-box.textContent = ok ? 'core loaded: define and lookup ok, version ' + window.yq.version : 'core loaded: registry check failed';
+yq.define('yq-pill', {
+  template: '<div class="pill"><b>{{ clicks }}</b> clicks<button yq-on:click="inc">+1</button><button yq-on:click="reset">reset</button></div>',
+  style: '.pill { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border: 1px solid #cbd5e1; border-radius: 8px; background: #f8fafc; font-family: inherit; } .pill button { font: inherit; padding: 4px 12px; border: 1px solid #6366f1; border-radius: 6px; background: #6366f1; color: #fff; cursor: pointer; }',
+  script: function () {
+    return {
+      state: { clicks: 0 },
+      inc: function (state) {
+        state.clicks = state.clicks + 1
+      },
+      reset: function (state) {
+        state.clicks = 0
+      }
+    }
+  }
+})
+document.getElementById('version').textContent = yq.version
 </script>
 </body>
 </html>

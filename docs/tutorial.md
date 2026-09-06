@@ -198,6 +198,6 @@ If your effect started an interval, a subscription or a fetch, return a cleanup 
 
 ## Next steps
 
-- Read the [API surface](../README.md#api-surface) in the README.
+- Read the [What is in v0.1.0](../README.md#what-is-in-v010) section in the README.
 - Open the full demo at `examples/full-demo.html` for forms, lists and conditional rendering together.
 - Read the Chinese version of this tutorial: [中文教程](./tutorial.zh-CN.md).
