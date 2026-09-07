@@ -505,12 +505,13 @@ function createComponent(options: ComponentOptions): ComponentInstance {
     slots: parsed.slots,
     scopeId
   }
-  const state: Record<string, any> = {}
+  const scriptResult = runScriptResult(cdo)
+  const state: Record<string, any> = extractScriptState(scriptResult)
   const derivedStates: Record<string, any> = {}
   const effects: (() => void)[] = []
   const context = createRenderContext(state, cdo.slots)
   const root = renderSkeleton(cdo, container)
-  
+
   context.nodeCache = populateNodeCache(cdo, root)
   
   const debugManager = getDebugManager()

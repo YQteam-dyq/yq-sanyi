@@ -267,9 +267,9 @@ function parseAttributeValue(value: string, attr: string, slots: Slot[], nodeId:
       }
       const pathSegments = parsePath(inner)
       if (BOOLEAN_ATTRS.has(attr)) {
-        slots.push({ kind: 'bool', nodeId, attr })
+        slots.push({ kind: 'bool', nodeId, attr, path: pathSegments })
       } else {
-        slots.push({ kind: 'attr', nodeId, attr })
+        slots.push({ kind: 'attr', nodeId, attr, path: pathSegments })
       }
       return [{ path: pathSegments }]
     } else {

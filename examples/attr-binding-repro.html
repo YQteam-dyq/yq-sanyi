@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>yq-sanyi attr binding repro</title>
+<style>
+body { font-family: system-ui, sans-serif; max-width: 40rem; margin: 2rem auto; padding: 0 1rem; color: #1e293b; }
+h1 { font-size: 1.5rem; }
+.note { color: #64748b; font-size: 0.9rem; }
+yq-test { display: block; margin: 1rem 0; }
+button { font: inherit; padding: 4px 12px; border: 1px solid #6366f1; border-radius: 6px; background: #6366f1; color: #fff; cursor: pointer; }
+ul { padding-left: 1.2rem; }
+li { list-style: disc; padding: 4px 0; }
+</style>
+</head>
+<body>
+<h1>yq-sanyi attribute-binding repro</h1>
+<p class="note">After v0.2.0 hotfix. Verifies <code>attr="{{ path }}"</code> writes correctly on mount and updates with state.</p>
+
+<yq-test></yq-test>
+
+<yq-todo></yq-todo>
+
+<script src="../packages/core/dist/core.global.js"></script>
+<script>
+yq.define('yq-test', {
+  template: '<div><input value="{{ v }}"><span title="{{ v }}">{{ v }}</span> <button yq-on:click="update">change</button></div>',
+  style: 'div { display: flex; align-items: center; gap: 8px; } input { font: inherit; padding: 4px 8px; border: 1px solid #cbd5e1; border-radius: 6px; }',
+  script: function () {
+    return {
+      state: { v: 'Hi' },
+      update: function (state) { state.v = state.v === 'Hi' ? 'After' : 'Hi' }
+    }
+  }
+})
+
+yq.define('yq-todo', {
+  template: '<ul>{{#each todos as t}}<li data-id="{{ t.id }}" yq-on:click="remove">remove {{ t.text }}</li>{{/each}}</ul>',
+  style: '',
+  script: function () {
+    return {
+      state: { todos: [{ id: 42, text: 'first' }, { id: 7, text: 'second' }] },
+      remove: function (state, event) {
+        const id = Number(event.currentTarget.dataset.id)
+        state.todos = state.todos.filter(function (t) { return t.id !== id })
+      }
+    }
+  }
+})
+</script>
+</body>
+</html>
