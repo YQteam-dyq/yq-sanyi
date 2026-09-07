@@ -36,7 +36,7 @@ test('text slot 基本路径与混合静态文本', () => {
 test('attr 槽整值绑定', () => {
   const result = parseTemplate('test', '<input value="{{ form.name }}">')
   assert.strictEqual(result.slots.length, 1)
-  assert.deepEqual(result.slots[0], { kind: 'attr', nodeId: 0, attr: 'value' })
+  assert.deepEqual(result.slots[0], { kind: 'attr', nodeId: 0, attr: 'value', path: ['form', 'name'] })
   assert(!result.root.staticAttrs.hasOwnProperty('value'))
   assert.deepEqual(result.root.dynAttrs, { value: [{ path: ['form', 'name'] }] })
 })
@@ -44,7 +44,7 @@ test('attr 槽整值绑定', () => {
 test('bool 槽布尔属性集', () => {
   const result = parseTemplate('test', '<input disabled="{{ isDisabled }}">')
   assert.strictEqual(result.slots.length, 1)
-  assert.deepEqual(result.slots[0], { kind: 'bool', nodeId: 0, attr: 'disabled' })
+  assert.deepEqual(result.slots[0], { kind: 'bool', nodeId: 0, attr: 'disabled', path: ['isDisabled'] })
   assert(!result.root.staticAttrs.hasOwnProperty('disabled'))
   assert.deepEqual(result.root.dynAttrs, { disabled: [{ path: ['isDisabled'] }] })
 })
@@ -206,13 +206,13 @@ test('数字路径段', () => {
 test('布尔属性值绑定', () => {
   const result = parseTemplate('test', '<input checked="{{ isChecked }}">')
   assert.strictEqual(result.slots.length, 1)
-  assert.deepEqual(result.slots[0], { kind: 'bool', nodeId: 0, attr: 'checked' })
+  assert.deepEqual(result.slots[0], { kind: 'bool', nodeId: 0, attr: 'checked', path: ['isChecked'] })
 })
 
 test('非布尔属性值绑定', () => {
   const result = parseTemplate('test', '<input value="{{ form.input }}">')
   assert.strictEqual(result.slots.length, 1)
-  assert.deepEqual(result.slots[0], { kind: 'attr', nodeId: 0, attr: 'value' })
+  assert.deepEqual(result.slots[0], { kind: 'attr', nodeId: 0, attr: 'value', path: ['form', 'input'] })
 })
 
 test('嵌套元素文本槽', () => {
@@ -225,8 +225,8 @@ test('嵌套元素文本槽', () => {
 test('多个属性绑定', () => {
   const result = parseTemplate('test', '<input value="{{ form.name }}" placeholder="{{ form.placeholder }}">')
   assert.strictEqual(result.slots.length, 2)
-  assert.deepEqual(result.slots[0], { kind: 'attr', nodeId: 0, attr: 'value' })
-  assert.deepEqual(result.slots[1], { kind: 'attr', nodeId: 0, attr: 'placeholder' })
+  assert.deepEqual(result.slots[0], { kind: 'attr', nodeId: 0, attr: 'value', path: ['form', 'name'] })
+  assert.deepEqual(result.slots[1], { kind: 'attr', nodeId: 0, attr: 'placeholder', path: ['form', 'placeholder'] })
   assert.deepEqual(result.root.dynAttrs, {
     value: [{ path: ['form', 'name'] }],
     placeholder: [{ path: ['form', 'placeholder'] }]
@@ -236,7 +236,7 @@ test('多个属性绑定', () => {
 test('混合静态和动态属性', () => {
   const result = parseTemplate('test', '<input class="static" value="{{ form.name }}">')
   assert.strictEqual(result.slots.length, 1)
-  assert.deepEqual(result.slots[0], { kind: 'attr', nodeId: 0, attr: 'value' })
+  assert.deepEqual(result.slots[0], { kind: 'attr', nodeId: 0, attr: 'value', path: ['form', 'name'] })
   assert.deepEqual(result.root.staticAttrs, { class: 'static' })
   assert.deepEqual(result.root.dynAttrs, { value: [{ path: ['form', 'name'] }] })
 })
@@ -298,15 +298,15 @@ test('带属性的void元素', () => {
 test('带动态属性的void元素', () => {
   const result = parseTemplate('test', '<img src="{{ image.src }}" alt="{{ image.alt }}">')
   assert.strictEqual(result.slots.length, 2)
-  assert.deepEqual(result.slots[0], { kind: 'attr', nodeId: 0, attr: 'src' })
-  assert.deepEqual(result.slots[1], { kind: 'attr', nodeId: 0, attr: 'alt' })
+  assert.deepEqual(result.slots[0], { kind: 'attr', nodeId: 0, attr: 'src', path: ['image', 'src'] })
+  assert.deepEqual(result.slots[1], { kind: 'attr', nodeId: 0, attr: 'alt', path: ['image', 'alt'] })
   assert.deepEqual(result.root.dynAttrs, { src: [{ path: ['image', 'src'] }], alt: [{ path: ['image', 'alt'] }] })
 })
 
 test('带布尔属性的void元素', () => {
   const result = parseTemplate('test', '<input disabled="{{ isDisabled }}">')
   assert.strictEqual(result.slots.length, 1)
-  assert.deepEqual(result.slots[0], { kind: 'bool', nodeId: 0, attr: 'disabled' })
+  assert.deepEqual(result.slots[0], { kind: 'bool', nodeId: 0, attr: 'disabled', path: ['isDisabled'] })
 })
 
 test('复杂文本混合带多个表达式', () => {
@@ -359,8 +359,8 @@ test('带无效路径的错误处理', () => {
 test('带多个属性的正确处理', () => {
   const result = parseTemplate('test', '<input value="{{ form.name }}" placeholder="{{ form.placeholder }}">')
   assert.strictEqual(result.slots.length, 2)
-  assert.deepEqual(result.slots[0], { kind: 'attr', nodeId: 0, attr: 'value' })
-  assert.deepEqual(result.slots[1], { kind: 'attr', nodeId: 0, attr: 'placeholder' })
+  assert.deepEqual(result.slots[0], { kind: 'attr', nodeId: 0, attr: 'value', path: ['form', 'name'] })
+  assert.deepEqual(result.slots[1], { kind: 'attr', nodeId: 0, attr: 'placeholder', path: ['form', 'placeholder'] })
   assert.deepEqual(result.root.dynAttrs, {
     value: [{ path: ['form', 'name'] }],
     placeholder: [{ path: ['form', 'placeholder'] }]
@@ -370,7 +370,7 @@ test('带多个属性的正确处理', () => {
 test('带混合静态和动态属性的正确处理', () => {
   const result = parseTemplate('test', '<input class="static" value="{{ form.name }}">')
   assert.strictEqual(result.slots.length, 1)
-  assert.deepEqual(result.slots[0], { kind: 'attr', nodeId: 0, attr: 'value' })
+  assert.deepEqual(result.slots[0], { kind: 'attr', nodeId: 0, attr: 'value', path: ['form', 'name'] })
   assert.deepEqual(result.root.staticAttrs, { class: 'static' })
   assert.deepEqual(result.root.dynAttrs, { value: [{ path: ['form', 'name'] }] })
 })
