@@ -342,3 +342,153 @@ test('same component style is injected once and released on last unmount', () =>
   hostB.disconnectedCallback()
   assert.equal(scopedStyleCount(), 0)
 })
+
+test('row event bindings run handlers in the row scope and reuse rows', async () => {
+  installGlobals()
+  define('x-row-drop', {
+    name: 'x-row-drop',
+    template: '<div><span>{{ total }}</span><div yq-for="(item, i) in items" yq-key="id"><button yq-on:click="drop">{{ i }}:{{ item.label }}</button></div></div>',
+    style: '',
+    script: function () {
+      return {
+        state: {
+          items: [
+            { id: 1, label: 'first' },
+            { id: 2, label: 'second' },
+            { id: 3, label: 'third' }
+          ],
+          total: 3
+        },
+        drop: function (state) {
+          state.items.splice(state.i, 1)
+          state.total = state.items.length
+        }
+      }
+    }
+  })
+  const host = createElementLike('x-row-drop')
+  host.isConnected = true
+  host.connectedCallback()
+  const instance = host._yqInstance
+  const total = instance.root.children[0]
+  const list = instance.root.children[1]
+  const rowLabels = () => list.children.map((row) => row.children[0].textContent)
+  assert.equal(total.textContent, '3')
+  assert.deepEqual(rowLabels(), ['0:first', '1:second', '2:third'])
+  const firstRow = list.children[0]
+  const firstButton = firstRow.children[0]
+  const secondRow = list.children[1]
+  assert.equal(firstButton.listeners.click.length, 1)
+  firstButton.dispatch('click')
+  await flush()
+  assert.equal(total.textContent, '2')
+  assert.deepEqual(rowLabels(), ['0:second', '1:third'])
+  assert.equal(list.children.length, 2)
+  assert.equal(list.children[0], secondRow)
+  assert.equal(firstButton.listeners.click.length, 0)
+  assert.equal(list.children[0].children[0].listeners.click.length, 1)
+  list.children[0].children[0].dispatch('click')
+  await flush()
+  assert.deepEqual(rowLabels(), ['0:third'])
+  assert.equal(total.textContent, '1')
+  host.disconnectedCallback()
+})
+
+test('row event listeners are released when rows and the host are removed', async () => {
+  installGlobals()
+  define('x-row-hold', {
+    name: 'x-row-hold',
+    template: '<div><div yq-for="(item, i) in items" yq-key="id"><button yq-on:click="noop">{{ item.label }}</button></div></div>',
+    style: '',
+    script: function () {
+      return {
+        state: { items: [{ id: 1, label: 'a' }, { id: 2, label: 'b' }] },
+        noop: function () {}
+      }
+    }
+  })
+  const host = createElementLike('x-row-hold')
+  host.isConnected = true
+  host.connectedCallback()
+  const instance = host._yqInstance
+  const list = instance.root.children[0]
+  const keptRow = list.children[0]
+  const droppedRow = list.children[1]
+  const droppedButton = droppedRow.children[0]
+  assert.equal(droppedButton.listeners.click.length, 1)
+  instance.state.items.pop()
+  await flush()
+  assert.equal(list.children.length, 1)
+  assert.equal(list.children[0], keptRow)
+  assert.equal(droppedButton.listeners.click.length, 0)
+  const keptButton = keptRow.children[0]
+  assert.equal(keptButton.listeners.click.length, 1)
+  host.disconnectedCallback()
+  assert.equal(keptButton.listeners.click.length, 0)
+})
+
+test('row handlers are called with the host as this and the native event', async () => {
+  installGlobals()
+  const seen = { self: null, type: null, label: null, index: null }
+  define('x-row-scope', {
+    name: 'x-row-scope',
+    template: '<div><div yq-for="(item, i) in items" yq-key="id"><button yq-on:click="pick">{{ item.label }}</button></div></div>',
+    style: '',
+    script: function () {
+      return {
+        state: { items: [{ id: 1, label: 'one' }], picked: '' },
+        pick: function (state, event) {
+          seen.self = this
+          seen.type = event.type
+          seen.label = state.item.label
+          seen.index = state.i
+          state.picked = state.item.label
+        }
+      }
+    }
+  })
+  const host = createElementLike('x-row-scope')
+  host.isConnected = true
+  host.connectedCallback()
+  const instance = host._yqInstance
+  const button = instance.root.children[0].children[0].children[0]
+  button.dispatch('click')
+  await flush()
+  assert.equal(seen.self, host)
+  assert.equal(seen.type, 'click')
+  assert.equal(seen.label, 'one')
+  assert.equal(seen.index, 0)
+  assert.equal(instance.state.picked, 'one')
+  host.disconnectedCallback()
+})
+
+test('row state writes to the component scope trigger a single refresh', async () => {
+  installGlobals()
+  define('x-row-write', {
+    name: 'x-row-write',
+    template: '<div><div yq-for="item in items" yq-key="id"><button yq-on:click="toggle">{{ item.label }}{{ suffix }}</button></div></div>',
+    style: '',
+    script: function () {
+      return {
+        state: { items: [{ id: 1, label: 'a' }], suffix: '!' },
+        toggle: function (state) {
+          state.suffix = '?'
+          state.item.label = 'b'
+        }
+      }
+    }
+  })
+  const host = createElementLike('x-row-write')
+  host.isConnected = true
+  host.connectedCallback()
+  const instance = host._yqInstance
+  const updateCount = () => instance.updateLogs.filter((log) => log.path === 'update').length
+  const baseline = updateCount()
+  const button = instance.root.children[0].children[0].children[0]
+  assert.equal(button.textContent, 'a!')
+  button.dispatch('click')
+  await flush()
+  assert.equal(button.textContent, 'b?')
+  assert.equal(updateCount(), baseline + 1)
+  host.disconnectedCallback()
+})

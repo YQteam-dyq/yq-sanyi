@@ -15,7 +15,7 @@ const BOOLEAN_ATTRS = new Set(['checked', 'disabled', 'hidden', 'selected', 'rea
 const VOID_TAGS = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr'])
 
 export type ParsedPart = { static: string } | { path: string[] }
-export interface ListSpec { itemVar: string; itemsPath: string[]; keyProp: string | null }
+export interface ListSpec { itemVar: string; indexVar: string | null; itemsPath: string[]; keyProp: string | null }
 export interface SNode {
   id: number
   tag: string
@@ -30,7 +30,7 @@ export type Slot =
   | { kind: 'attr'; nodeId: number; attr: string; path?: string[] }
   | { kind: 'bool'; nodeId: number; attr: string; path?: string[] }
   | { kind: 'event'; nodeId: number; event: string; handler: string }
-  | { kind: 'list'; nodeId: number; itemVar: string; itemsPath: string[]; keyProp: string | null }
+  | { kind: 'list'; nodeId: number; itemVar: string; indexVar: string | null; itemsPath: string[]; keyProp: string | null }
 export interface Cdo {
   name: string
   root: SNode
@@ -62,6 +62,8 @@ export interface RenderContext {
   slots: Slot[]
   nodeCache: Map<number, Element>
   listElements: Map<string, Element[]>
+  handlers?: Record<string, (...args: any[]) => any>
+  host?: Element
 }
 
 export interface ScoperOptions {
@@ -281,18 +283,35 @@ function parseAttributeValue(value: string, attr: string, slots: Slot[], nodeId:
 
 function parseListSpec(value: string, keyAttr: string | null): ListSpec {
   let itemVar = 'item'
+  let indexVar: string | null = null
   let itemsPath: string[] = []
   if (value.includes(' in ')) {
     const parts = value.split(' in ')
     if (parts.length !== 2) {
       throw new Error(`invalid yq-for format: ${value}`)
     }
-    itemVar = parts[0].trim()
+    const binding = parts[0].trim()
     itemsPath = parsePath(parts[1].trim())
+    if (binding.startsWith('(') && binding.endsWith(')')) {
+      const names = binding.slice(1, -1).split(',').map(part => part.trim())
+      if (names.length !== 2 || names[0].length === 0 || names[1].length === 0) {
+        throw new Error(`invalid yq-for row binding: ${value}`)
+      }
+      if (names[0] === names[1]) {
+        throw new Error(`duplicate yq-for row binding name: ${value}`)
+      }
+      itemVar = names[0]
+      indexVar = names[1]
+    } else {
+      if (binding.length === 0) {
+        throw new Error(`invalid yq-for item name: ${value}`)
+      }
+      itemVar = binding
+    }
   } else {
     itemsPath = parsePath(value.trim())
   }
-  return { itemVar, itemsPath, keyProp: keyAttr }
+  return { itemVar, indexVar, itemsPath, keyProp: keyAttr }
 }
 
 function parseTemplate(name: string, template: string): { root: SNode; nodes: SNode[]; slots: Slot[] } {
@@ -428,7 +447,7 @@ function parseTemplate(name: string, template: string): { root: SNode; nodes: SN
     }
 
     if (node.list) {
-      slots.push({ kind: 'list', nodeId: node.id, itemVar: node.list.itemVar, itemsPath: node.list.itemsPath, keyProp: node.list.keyProp })
+      slots.push({ kind: 'list', nodeId: node.id, itemVar: node.list.itemVar, indexVar: node.list.indexVar, itemsPath: node.list.itemsPath, keyProp: node.list.keyProp })
     }
 
     if (VOID_TAGS.has(node.tag) || inSelfClosing) {

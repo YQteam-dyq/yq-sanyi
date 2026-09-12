@@ -138,7 +138,15 @@ Add `yq-for="item in items"` to a container element. The framework renders one c
 </ul>
 ```
 
-`yq-key` names the per-item stable field. Rows are matched by key and reused instead of being rebuilt, which keeps stateful content and minimizes DOM writes. A keyed row should not be nested inside another `yq-for`, and event bindings do not apply inside list rows — see [Troubleshooting](#troubleshooting).
+`yq-key` names the per-item stable field. Rows are matched by key and reused instead of being rebuilt, which keeps stateful content and minimizes DOM writes. A keyed row should not be nested inside another `yq-for` — render the inner list through a child component instead.
+
+Write `yq-for="(item, index) in items"` when a row needs its position in the list:
+
+```html
+<ul>
+  <li yq-for="(user, position) in users" yq-key="id">{{ position }}. {{ user.name }}</li>
+</ul>
+```
 
 ### Event binding
 
@@ -165,6 +173,26 @@ Add `yq-for="item in items"` to a container element. The framework renders one c
 ```
 
 Handlers receive the reactive state and the native event. Because updates are batched, several state writes inside one handler render exactly once.
+
+Events also work inside a `yq-for` row. Each row gets its own scope, so a handler can read the row item directly from `state`:
+
+```html
+<script>
+  yq.define('yq-task-list', {
+    template: '<div><div yq-for="task in tasks" yq-key="id">{{ task.text }} <button yq-on:click="remove">x</button></div></div>',
+    script: function () {
+      return {
+        state: { tasks: [] },
+        remove: function (state, event) {
+          state.tasks = state.tasks.filter(function (task) { return task.id !== state.task.id })
+        }
+      }
+    }
+  })
+</script>
+```
+
+Inside a row, `state` is a thin overlay on the component state: reads resolve the row item first and fall back to the component scope, and writes go through to the component state so they stay reactive and batched. Listeners are rebound when a row is recycled and dropped with the row itself, so removing items never leaks handlers.
 
 ## State and handlers
 
@@ -351,4 +379,5 @@ The declarative path is the primary one, but the runtime also exports an imperat
 
 - Browse the [features and API overview](../README.md).
 - Open `examples/full-demo.html` for a one-page showcase of tags, events, lists and state.
+- Browse [examples/list-row-events.html](../examples/list-row-events.html) for row handlers, row indexes and keyed reconciliation.
 - Read the Chinese version of this tutorial: [中文教程](./tutorial.zh-CN.md).
