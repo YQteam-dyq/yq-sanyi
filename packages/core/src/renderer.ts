@@ -1,5 +1,5 @@
 import type { SNode, Slot, Cdo, RenderContext, ComponentInstance, ComponentOptions, ScoperOptions, Scoper, StyleInjection, LifecycleHooks, ParsedPart } from './index.js'
-import { parseTemplate, createRenderContext, resolvePath, generateScopeId, createStateProxy } from './index.js'
+import { parseTemplate, createRenderContext, resolvePath, generateScopeId, createStateProxy, lookup } from './index.js'
 import { DebugManager, DebugManagerOptions, getDebugManager } from './debug-manager-simple.js'
 import { ErrorBoundary } from './error-boundary.js'
 
@@ -13,6 +13,159 @@ function findNode(cdo: Cdo, nodeId: number): SNode | null {
 function isNestedInstanceHost(element: Element): boolean {
   const el = element as unknown as { _yqInstance?: unknown }
   return Boolean(el._yqInstance)
+}
+
+function hasOwn(target: object, key: string | symbol): boolean {
+  return Object.prototype.hasOwnProperty.call(target, key)
+}
+
+function createPropsOverlay(state: Record<string, any>, props: Record<string, any>): Record<string, any> {
+  return new Proxy(state, {
+    get(target, key, receiver) {
+      if (typeof key === 'string' && hasOwn(props, key) && props[key] !== undefined) return props[key]
+      return Reflect.get(target, key, receiver)
+    },
+    set(target, key, value, receiver) {
+      if (typeof key === 'string' && hasOwn(props, key)) {
+        props[key] = value
+        return true
+      }
+      return Reflect.set(target, key, value, receiver)
+    },
+    has(target, key) {
+      if (typeof key === 'string' && hasOwn(props, key) && props[key] !== undefined) return true
+      return Reflect.has(target, key)
+    },
+    ownKeys(target) {
+      const keys = new Set<string | symbol>(Reflect.ownKeys(target))
+      for (const key of Object.keys(props)) {
+        keys.add(key)
+      }
+      return Array.from(keys)
+    },
+    getOwnPropertyDescriptor(target, key) {
+      if (typeof key === 'string' && hasOwn(props, key) && props[key] !== undefined) {
+        return { value: props[key], writable: true, enumerable: true, configurable: true }
+      }
+      return Reflect.getOwnPropertyDescriptor(target, key)
+    }
+  }) as Record<string, any>
+}
+
+const PROP_SKIP_ATTRS = new Set(['class', 'style', 'id', 'yq-key', 'yq-is'])
+
+function collectElementProps(element: Element, skipAttrs?: Set<string>): Record<string, any> {
+  const props: Record<string, any> = {}
+  const el = element as unknown as { attrs?: Record<string, string>; dataset?: Record<string, string>; getAttributeNames?: () => string[] }
+  const names = typeof el.getAttributeNames === 'function'
+    ? el.getAttributeNames()
+    : Object.keys(el.attrs || el.dataset || {})
+  for (const attr of names) {
+    if (PROP_SKIP_ATTRS.has(attr)) continue
+    if (skipAttrs && skipAttrs.has(attr)) continue
+    if (attr.startsWith('yq-on:') || attr.startsWith('data-yq') || attr.startsWith('yq-model')) continue
+    const value = element.getAttribute(attr)
+    if (value == null) continue
+    if (value.startsWith('{{') && value.endsWith('}}')) continue
+    props[attr] = value
+  }
+  return props
+}
+
+function distributeSlotContent(root: Element, captured: Element[]): void {
+  if (!captured || captured.length === 0) return
+  const placeholders: Array<{ element: Element; name: string | null }> = []
+  function walk(el: Element): void {
+    for (const child of Array.from(el.children || [])) {
+      if ((child.tagName || '').toLowerCase() === 'slot') {
+        placeholders.push({ element: child, name: child.getAttribute('name') })
+      } else {
+        walk(child)
+      }
+    }
+  }
+  walk(root)
+  if (placeholders.length === 0) return
+  const namedNodes = new Map<string, Element[]>()
+  const defaultNodes: Element[] = []
+  for (const node of captured) {
+    const name = node.getAttribute ? node.getAttribute('slot') : null
+    if (name) {
+      const bucket = namedNodes.get(name) || []
+      bucket.push(node)
+      namedNodes.set(name, bucket)
+    } else {
+      defaultNodes.push(node)
+    }
+  }
+  for (const placeholder of placeholders) {
+    const targets = placeholder.name ? (namedNodes.get(placeholder.name) || []) : defaultNodes
+    for (const target of targets) {
+      placeholder.element.appendChild(target)
+    }
+  }
+}
+
+function componentTagName(tag: string): boolean {
+  if (typeof tag !== 'string' || tag.length === 0) return false
+  try {
+    return lookup(tag) !== undefined
+  } catch (error) {
+    return false
+  }
+}
+
+function applyProps(instance: ComponentInstance, props: Record<string, any>): void {
+  if (!instance.props) instance.props = {}
+  let changed = false
+  for (const [key, value] of Object.entries(props)) {
+    if (instance.props[key] !== value) {
+      instance.props[key] = value
+      changed = true
+    }
+  }
+  if (changed && typeof instance.requestUpdate === 'function') {
+    instance.requestUpdate()
+  }
+}
+
+function syncNestedProps(cdo: Cdo, context: RenderContext): void {
+  const boundAttrs = new Map<Element, Set<string>>()
+  for (const slot of cdo.slots) {
+    if (slot.kind !== 'attr' && slot.kind !== 'bool') continue
+    if (!slot.path) continue
+    const snode = findNode(cdo, slot.nodeId)
+    if (!snode || !componentTagName(snode.tag)) continue
+    const element = context.nodeCache.get(slot.nodeId)
+    if (!element) continue
+    const skip = boundAttrs.get(element) || new Set<string>()
+    skip.add(slot.attr)
+    boundAttrs.set(element, skip)
+    const instance = (element as unknown as { _yqInstance?: ComponentInstance })._yqInstance
+    if (!instance) continue
+    applyProps(instance, { [slot.attr]: resolvePath(context.state, slot.path) })
+  }
+  for (const [element, skip] of boundAttrs) {
+    const instance = (element as unknown as { _yqInstance?: ComponentInstance })._yqInstance
+    if (!instance) continue
+    applyProps(instance, collectElementProps(element, skip))
+  }
+  for (const [, element] of context.nodeCache) {
+    if (boundAttrs.has(element)) continue
+    const instance = (element as unknown as { _yqInstance?: ComponentInstance })._yqInstance
+    if (!instance) continue
+    applyProps(instance, collectElementProps(element))
+  }
+}
+
+function assignPath(state: Record<string, any>, path: string[], value: any): void {
+  let current = state
+  for (let i = 0; i < path.length - 1; i++) {
+    if (!current || typeof current !== 'object') return
+    current = current[path[i]]
+  }
+  if (!current || typeof current !== 'object') return
+  current[path[path.length - 1]] = value
 }
 
 function composeText(snode: SNode, state: Record<string, any>): string {
@@ -180,13 +333,18 @@ function bindRowEvents(cdo: Cdo, containerNode: SNode, rowElement: Element, rowC
     const target = slot.nodeId === containerNode.id ? rowElement : rowCache.get(slot.nodeId)
     if (!target) continue
     const handler = bindings.handlers[slot.handler]
-    if (typeof handler !== 'function') continue
-    const listener = (event: Event) => {
-      try {
-        handler.call(bindings.host || target, rowState, event)
-      } catch (error) {
-        console.error(`[yq:event] handler "${slot.handler}" failed:`, error)
+    let listener: ((event: Event) => void) | null = null
+    if (typeof handler === 'function') {
+      listener = (event: Event) => {
+        try {
+          handler.call(bindings.host || target, rowState, event)
+        } catch (error) {
+          console.error(`[yq:event] handler "${slot.handler}" failed:`, error)
+        }
       }
+    } else {
+      listener = createEmitListener(slot.handler, () => rowState, bindings.host || target)
+      if (!listener) continue
     }
     target.addEventListener(slot.event, listener as EventListener)
     cleanups.push(() => {
@@ -321,19 +479,19 @@ function populateNodeCache(cdo: Cdo, root: Element): Map<number, Element> {
     if (dataset && dataset.yqKey != null) {
       return
     }
-    if (isNestedInstanceHost(element)) {
-      return
-    }
     if (dataset && 'yqNodeId' in dataset) {
       const nodeId = parseInt(dataset.yqNodeId || '0')
       nodeCache.set(nodeId, element)
     }
-    
+    if (isNestedInstanceHost(element)) {
+      return
+    }
+
     for (const child of Array.from(element.children)) {
       traverse(child)
     }
   }
-  
+
   traverse(root)
   return nodeCache
 }
@@ -350,6 +508,202 @@ function belongsToListItem(cdo: Cdo, nodeId: number): boolean {
   return false
 }
 
+function elementInParent(parent: Element, element: Element): boolean {
+  const children = parent.children
+  if (!children) return false
+  for (let i = 0; i < children.length; i++) {
+    if (children[i] === element) return true
+  }
+  return false
+}
+
+function setCondPresence(element: Element, present: boolean): void {
+  const holder = element as Element & { _yqCondAnchor?: Element | null; _yqCondParent?: Element | null }
+  if (present) {
+    const parent = holder._yqCondParent || element.parentElement
+    if (!parent || elementInParent(parent, element)) return
+    const anchor = holder._yqCondAnchor
+    if (anchor && anchor.parentElement === parent && typeof parent.insertBefore === 'function') {
+      parent.insertBefore(element, anchor)
+    } else if (typeof parent.appendChild === 'function') {
+      parent.appendChild(element)
+    }
+  } else {
+    const parent = element.parentElement
+    if (!parent) return
+    holder._yqCondParent = parent
+    const children = parent.children || []
+    let index = -1
+    for (let i = 0; i < children.length; i++) {
+      if (children[i] === element) {
+        index = i
+        break
+      }
+    }
+    holder._yqCondAnchor = index > -1 && index + 1 < children.length ? children[index + 1] : null
+    if (typeof element.remove === 'function') {
+      element.remove()
+    } else if (typeof parent.removeChild === 'function') {
+      parent.removeChild(element)
+    }
+  }
+}
+
+function evaluateCond(spec: NonNullable<SNode['cond']>, context: RenderContext): boolean {
+  if (spec.mode === 'else') return true
+  if (!spec.path) return false
+  const value = resolvePath(context.state, spec.path)
+  if (Array.isArray(value)) return value.length > 0
+  return Boolean(value)
+}
+
+function processConditions(cdo: Cdo, context: RenderContext): void {
+  function walk(snode: SNode): void {
+    if (snode.list) return
+    const children = snode.children
+    let i = 0
+    while (i < children.length) {
+      const child = children[i]
+      if (!child.cond) {
+        walk(child)
+        i++
+        continue
+      }
+      if (child.cond.mode === 'show') {
+        const element = context.nodeCache.get(child.id)
+        if (element) {
+          if (evaluateCond(child.cond, context)) {
+            element.removeAttribute('hidden')
+          } else {
+            element.setAttribute('hidden', '')
+          }
+        }
+        walk(child)
+        i++
+        continue
+      }
+      let chosen = -1
+      let j = i
+      while (j < children.length && children[j].cond && children[j].cond!.mode !== 'show') {
+        const spec = children[j].cond!
+        if (spec.mode === 'if' && j > i) break
+        if (evaluateCond(spec, context)) {
+          chosen = j
+          break
+        }
+        j++
+      }
+      let k = i
+      while (k < children.length && children[k].cond && children[k].cond!.mode !== 'show') {
+        const spec = children[k].cond!
+        if (spec.mode === 'if' && k > i) break
+        const element = context.nodeCache.get(children[k].id)
+        if (element) setCondPresence(element, k === chosen)
+        k++
+      }
+      for (let m = i; m < k; m++) {
+        walk(children[m])
+      }
+      i = k > i ? k : i + 1
+    }
+  }
+  walk(cdo.root)
+}
+
+function fillModelSlot(node: Element, slot: Extract<Slot, { kind: 'model' }>, context: RenderContext): void {
+  const value = resolvePath(context.state, slot.path)
+  const el = node as HTMLInputElement
+  const tag = (node.tagName || '').toLowerCase()
+  if (tag === 'input') {
+    const type = ((node.getAttribute('type') || 'text') as string).toLowerCase()
+    if (type === 'checkbox') {
+      if (Array.isArray(value)) {
+        el.checked = value.map(String).includes(String(el.value))
+      } else {
+        el.checked = Boolean(value)
+      }
+      return
+    }
+    if (type === 'radio') {
+      el.checked = value != null && String(value) === String(el.value)
+      return
+    }
+  }
+  el.value = value == null ? '' : String(value)
+}
+
+function readModelValue(node: Element, slot: Extract<Slot, { kind: 'model' }>): { ok: boolean; value: any } {
+  const el = node as unknown as HTMLInputElement & { checked?: boolean }
+  const tag = (node.tagName || '').toLowerCase()
+  if (tag === 'input') {
+    const type = ((node.getAttribute('type') || 'text') as string).toLowerCase()
+    if (type === 'checkbox') {
+      return { ok: true, value: Boolean(el.checked) }
+    }
+    if (type === 'radio') {
+      if (!el.checked) return { ok: false, value: undefined }
+      return { ok: true, value: el.value }
+    }
+  }
+  return { ok: true, value: el.value }
+}
+
+function syncModelFromElement(instance: ComponentInstance, node: Element, slot: Extract<Slot, { kind: 'model' }>): void {
+  const read = readModelValue(node, slot)
+  if (!read.ok) return
+  let value = read.value
+  if (slot.trim && typeof value === 'string') value = value.trim()
+  if (slot.number) {
+    const num = Number(value)
+    if (!Number.isNaN(num)) value = num
+  }
+  assignPath(instance.state, slot.path, value)
+}
+
+function bindModelEvents(instance: ComponentInstance, cleanups: Array<() => void>): void {
+  for (const slot of instance.cdo.slots) {
+    if (slot.kind !== 'model') continue
+    if (belongsToListItem(instance.cdo, slot.nodeId)) continue
+    const element = instance.context.nodeCache.get(slot.nodeId)
+    if (!element) continue
+    const eventName = slot.lazy ? 'change' : 'input'
+    const listener = () => {
+      syncModelFromElement(instance, element, slot)
+    }
+    element.addEventListener(eventName, listener as EventListener)
+    cleanups.push(() => {
+      element.removeEventListener(eventName, listener as EventListener)
+    })
+  }
+  instance.eventCleanups = cleanups
+}
+
+function renderDynamic(node: Element, slot: Extract<Slot, { kind: 'dynamic' }>, context: RenderContext): void {
+  const holder = node as Element & { _yqDynamicName?: string | null; _yqDynamicInstance?: ComponentInstance | null }
+  const boundName = slot.path ? resolvePath(context.state, slot.path) : undefined
+  const name = boundName != null ? String(boundName) : node.getAttribute('yq-is')
+  if (holder._yqDynamicName === name) return
+  if (holder._yqDynamicInstance) {
+    unmountComponent(holder._yqDynamicInstance)
+    holder._yqDynamicInstance = null
+  }
+  holder._yqDynamicName = name || null
+  if (!name) return
+  let entry: { name: string; cdo: Cdo } | undefined
+  try {
+    entry = lookup(name)
+  } catch (error) {
+    entry = undefined
+  }
+  if (!entry) return
+  const child = createInstanceFromCdo(entry.name, entry.cdo, node as HTMLElement)
+  mountComponent(child)
+  bindEvents(child)
+  const host = node as unknown as { _yqInstance?: ComponentInstance | null }
+  host._yqInstance = child
+  holder._yqDynamicInstance = child
+}
+
 function fillSlots(cdo: Cdo, context: RenderContext): void {
   const rootNode = context.nodeCache.get(cdo.root.id)
   
@@ -360,31 +714,33 @@ function fillSlots(cdo: Cdo, context: RenderContext): void {
   }
   
   const cache = new Map<number, Element>()
-  
+
   function traverse(element: Element): void {
     const dataset = (element as HTMLElement).dataset
     if (dataset && dataset.yqKey != null) {
       return
     }
-    if (isNestedInstanceHost(element)) {
-      return
-    }
     if (dataset && dataset.yqNodeId) {
       cache.set(parseInt(dataset.yqNodeId || '0', 10), element)
     }
-    
+    if (isNestedInstanceHost(element)) {
+      return
+    }
+
     for (const child of Array.from(element.children)) {
       traverse(child)
     }
   }
-  
+
   traverse(rootNode)
-  
+
+  processConditions(cdo, context)
+
   for (const slot of cdo.slots) {
     if (slot.kind !== 'list' && belongsToListItem(cdo, slot.nodeId)) continue
     const node = cache.get(slot.nodeId)
     if (!node) continue
-    
+
     if (slot.kind === 'text') {
       fillTextSlot(node, slot, context, cdo)
     } else if (slot.kind === 'attr') {
@@ -393,12 +749,38 @@ function fillSlots(cdo: Cdo, context: RenderContext): void {
       fillBoolSlot(node, slot, context)
     } else if (slot.kind === 'list') {
       renderList(cdo, node, slot, context)
+    } else if (slot.kind === 'model') {
+      fillModelSlot(node, slot, context)
+    } else if (slot.kind === 'dynamic') {
+      renderDynamic(node, slot, context)
     }
   }
+
+  syncNestedProps(cdo, context)
 }
 
 function updateSlots(cdo: Cdo, context: RenderContext): void {
   fillSlots(cdo, context)
+}
+
+const EMIT_PATTERN = /^\$emit\(\s*(['"])([^'"]+)\1\s*(?:,\s*([\w.$]+))?\s*\)$/
+
+function createEmitListener(handlerName: string, getState: () => Record<string, any>, target: Element): ((event: Event) => void) | null {
+  const match = EMIT_PATTERN.exec(handlerName)
+  if (!match) return null
+  const eventName = match[2]
+  const payloadPath = match[3]
+  return () => {
+    try {
+      const payload = payloadPath ? resolvePath(getState(), payloadPath.split('.').filter(Boolean)) : undefined
+      const event = typeof CustomEvent === 'function'
+        ? new CustomEvent(eventName, { detail: payload, bubbles: true })
+        : { type: eventName, detail: payload, bubbles: true }
+      target.dispatchEvent(event as Event)
+    } catch (error) {
+      console.error(`[yq:emit] "$emit(${eventName})" failed:`, error)
+    }
+  }
 }
 
 function bindEvents(instance: ComponentInstance): void {
@@ -411,21 +793,27 @@ function bindEvents(instance: ComponentInstance): void {
     if (slot.kind !== 'event') continue
     if (belongsToListItem(instance.cdo, slot.nodeId)) continue
     const element = cache.get(slot.nodeId)
+    if (!element) continue
     const handler = handlers[slot.handler]
-    if (!element || !handler) continue
-    const listener = (event: Event) => {
-      try {
-        handler.call(instance.container, instance.state, event)
-      } catch (error) {
-        console.error(`[yq:event] handler "${slot.handler}" failed:`, error)
+    let listener: ((event: Event) => void) | null = null
+    if (typeof handler === 'function') {
+      listener = (event: Event) => {
+        try {
+          handler.call(instance.container, instance.state, event)
+        } catch (error) {
+          console.error(`[yq:event] handler "${slot.handler}" failed:`, error)
+        }
       }
+    } else {
+      listener = createEmitListener(slot.handler, () => instance.state, instance.container)
+      if (!listener) continue
     }
     element.addEventListener(slot.event, listener as EventListener)
     cleanups.push(() => {
       element.removeEventListener(slot.event, listener as EventListener)
     })
   }
-  instance.eventCleanups = cleanups
+  bindModelEvents(instance, cleanups)
 }
 
 function unbindEvents(instance: ComponentInstance): void {
@@ -631,14 +1019,15 @@ function createComponent(options: ComponentOptions): ComponentInstance {
   context.host = container
   
   const debugManager = getDebugManager()
-  const instance: ComponentInstance = { 
-    name, 
-    state, 
-    derivedStates, 
-    effects, 
-    context, 
-    cdo, 
-    container, 
+  const instance: ComponentInstance = {
+    name,
+    state,
+    props: {},
+    derivedStates,
+    effects,
+    context,
+    cdo,
+    container,
     root,
     lifecycleHooks: {},
     lifecycleState: 'created',
@@ -651,9 +1040,12 @@ function createComponent(options: ComponentOptions): ComponentInstance {
     errorCount: 0,
     lastErrorTime: null
   }
-  
+
+  instance.lifecycleHooks = extractDeclarativeHooks(scriptResult, instance)
+  instance.context.state = createPropsOverlay(instance.state, instance.props)
+
   debugManager.trackComponent(instance)
-  
+
   return instance
 }
 
@@ -675,15 +1067,32 @@ function extractScriptState(result: Record<string, any> | null): Record<string, 
   return {}
 }
 
+const RESERVED_SCRIPT_KEYS = new Set(['state', 'onMount', 'onUpdate', 'onUnmount'])
+
 function extractHandlers(result: Record<string, any> | null): Record<string, (...args: any[]) => any> {
   const handlers: Record<string, (...args: any[]) => any> = {}
   if (!result) return handlers
   for (const key of Object.keys(result)) {
-    if (key !== 'state' && typeof result[key] === 'function') {
+    if (RESERVED_SCRIPT_KEYS.has(key)) continue
+    if (typeof result[key] === 'function') {
       handlers[key] = result[key] as (...args: any[]) => any
     }
   }
   return handlers
+}
+
+const DECLARATIVE_HOOK_KEYS = ['onMount', 'onUpdate', 'onUnmount'] as const
+
+function extractDeclarativeHooks(result: Record<string, any> | null, instance: ComponentInstance): LifecycleHooks {
+  const hooks: LifecycleHooks = {}
+  if (!result) return hooks
+  for (const key of DECLARATIVE_HOOK_KEYS) {
+    const fn = result[key]
+    if (typeof fn === 'function') {
+      hooks[key] = () => fn(instance.state)
+    }
+  }
+  return hooks
 }
 
 function createInstanceFromCdo(name: string, cdo: Cdo, host: HTMLElement): ComponentInstance {
@@ -693,17 +1102,21 @@ function createInstanceFromCdo(name: string, cdo: Cdo, host: HTMLElement): Compo
   const derivedStates: Record<string, any> = {}
   const effects: (() => void)[] = []
   const context = createRenderContext(state, cdo.slots)
-  
+  const capturedSlotContent: Element[] = Array.from(host.children as unknown as Element[] || [])
+
   if ('innerHTML' in host) {
     host.innerHTML = ''
   }
   const root = renderSkeleton(cdo, host)
+  distributeSlotContent(root, capturedSlotContent)
   context.nodeCache = populateNodeCache(cdo, root)
   
   const debugManager = getDebugManager()
+  const initialProps = collectElementProps(host)
   const instance: ComponentInstance = {
     name,
     state,
+    props: initialProps,
     derivedStates,
     effects,
     context,
@@ -723,7 +1136,9 @@ function createInstanceFromCdo(name: string, cdo: Cdo, host: HTMLElement): Compo
     autoSync: true,
     handlers
   }
-  
+
+  instance.lifecycleHooks = extractDeclarativeHooks(scriptResult, instance)
+
   let updateScheduled = false
   const requestUpdate = (): void => {
     if (updateScheduled) return
@@ -735,9 +1150,11 @@ function createInstanceFromCdo(name: string, cdo: Cdo, host: HTMLElement): Compo
       updateComponent(instance)
     })
   }
+  instance.requestUpdate = requestUpdate
 
   instance.state = createStateProxy(state, requestUpdate)
-  instance.context.state = instance.state
+  instance.props = { ...initialProps }
+  instance.context.state = createPropsOverlay(instance.state, instance.props)
   instance.context.handlers = handlers
   instance.context.host = host
   
@@ -1034,5 +1451,16 @@ export {
   bindRowEvents,
   unbindRowEvents,
   bindEvents,
-  unbindEvents
+  unbindEvents,
+  processConditions,
+  setCondPresence,
+  fillModelSlot,
+  syncModelFromElement,
+  bindModelEvents,
+  renderDynamic,
+  createPropsOverlay,
+  collectElementProps,
+  applyProps,
+  syncNestedProps,
+  createEmitListener
 }

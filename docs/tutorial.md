@@ -148,6 +148,48 @@ Write `yq-for="(item, index) in items"` when a row needs its position in the lis
 </ul>
 ```
 
+### Conditional rendering
+
+`yq-if="path"` renders an element only when the state path is truthy. `yq-else-if` and `yq-else` build branching chains directly on the following sibling elements, and `yq-show` keeps the element in the DOM but toggles its `hidden` attribute. As with all bindings, the condition is a state path — use a `derived` value or a handler to compute richer predicates.
+
+```html
+<nav>
+  <a yq-if="user.isAdmin" href="/admin">admin</a>
+  <a yq-else-if="user.isGuest" href="/login">sign in</a>
+  <a yq-else href="/profile">profile</a>
+  <span yq-show="isLoading">loading...</span>
+</nav>
+```
+
+A removed branch releases nothing and keeps no listeners: the element is detached, retained by the runtime and re-inserted at its original position when the condition turns truthy again. Empty arrays count as falsy, so `yq-if="items"` doubles as a has-items check.
+
+### Two-way form binding
+
+`yq-model="path"` binds a form element to state in both directions: state writes update the element, and user input writes back into state on every `input` event.
+
+```html
+<script>
+  yq.define('yq-signup', {
+    template: `
+      <input yq-model.trim="name" type="text">
+      <input yq-model.number="age" type="number">
+      <input yq-model="agreed" type="checkbox">
+      <button yq-on:click="submit" yq-show="name && age">next</button>
+    `,
+    script: function () {
+      return {
+        state: { name: '', age: 0, agreed: false },
+        submit: function (state) {
+          state.submitted = true
+        }
+      }
+    }
+  })
+</script>
+```
+
+Modifiers tune the write-back: `yq-model.trim` strips surrounding whitespace from text, `yq-model.number` coerces the value with `Number` (non-numeric input is kept as-is), and `yq-model.lazy` syncs on the `change` event instead of every keystroke. Checkboxes bind to booleans, radios to their `value` when checked, and text inputs, textareas and selects bind to their value as a string.
+
 ### Event binding
 
 `yq-on:event="handler"` binds an event on an element to a handler returned by `script`.
@@ -246,6 +288,137 @@ Registered tags can be used inside another component's template. When a parent r
 </script>
 ```
 
+Registered tags can be used inside another component's template. When a parent renders, its children mount automatically; when the parent's element is removed from the page, the children unmount and release their listeners too.
+
+```html
+<script>
+  yq.define('yq-list-item', {
+    template: '<li>{{ label }}</li>',
+    script: function () {
+      return { state: { label: 'item' } }
+    }
+  })
+
+  yq.define('yq-list', {
+    template: '<ul><yq-list-item></yq-list-item></ul>',
+    script: function () {
+      return { state: {} }
+    }
+  })
+</script>
+```
+
+### Props
+
+Attributes on a child tag are passed to the child as props. Static attributes arrive as strings; a whole-value binding `{{ path }}` forwards the live parent value with its type, and the child re-renders when the parent value changes.
+
+```html
+<script>
+  yq.define('yq-list-item', {
+    template: '<li>{{ label }}</li>',
+    script: function () {
+      return { state: { label: 'item' } }
+    }
+  })
+
+  yq.define('yq-list', {
+    template: `
+      <ul>
+        <li yq-for="item in items" yq-key="id">
+          <yq-list-item label="{{ item.text }}"></yq-list-item>
+        </li>
+      </ul>
+    `,
+    script: function () {
+      return { state: { items: [{ id: 1, text: 'first' }] } }
+    }
+  })
+</script>
+```
+
+Inside the child, props shadow same-named state keys without mutating them: reads resolve the prop first and fall back to the child state, so `state.label` reflects the parent value while the child keeps its own default. Assigning to a prop key writes the child-local value and stops the shadowing for that key.
+
+### Slots
+
+A child template can mark placeholder positions with `<slot>` elements. Content written between the child's tags in the parent template is distributed into those placeholders. Use `<slot name="title"></slot>` for a named position and mark the incoming element with `slot="title"`; children without a `slot` attribute land in the default, nameless slot. The distributed content renders with the parent's data and the child's scope.
+
+```html
+<script>
+  yq.define('yq-modal', {
+    template: `
+      <div class="modal">
+        <header><slot name="title"></slot></header>
+        <div class="body"><slot></slot></div>
+      </div>
+    `,
+    style: '.modal { border: 1px solid #ddd; }',
+    script: function () {
+      return { state: {} }
+    }
+  })
+</script>
+```
+
+```html
+<yq-modal>
+  <h3 slot="title">Confirm</h3>
+  <p>Do you want to save the changes?</p>
+  <button yq-on:click="save">save</button>
+</yq-modal>
+```
+
+### Child-to-parent events
+
+A child can emit a custom event from any element with a `$emit('name', payloadPath)` handler. The parent listens on the child tag with `yq-on:name="handler"` and reads the payload from `event.detail`. The payload path resolves against the child state, so rows can emit their own item.
+
+```html
+<script>
+  yq.define('yq-row', {
+    template: '<button yq-on:click="$emit('select', item.id)">{{ item.text }}</button>',
+    script: function () {
+      return { state: { item: { id: 1, text: 'one' } } }
+    }
+  })
+
+  yq.define('yq-rows', {
+    template: '<yq-row yq-on:select="onSelect"></yq-row>',
+    script: function () {
+      return {
+        state: { selected: null },
+        onSelect: function (state, event) {
+          state.selected = event.detail
+        }
+      }
+    }
+  })
+</script>
+```
+
+### Dynamic components
+
+`<yq-component yq-is="name">` renders the registered component whose name it resolves to. Bind the name with a whole-value binding to swap components from state — useful for tabs and wizard steps. Unknown names render nothing and switching unmounts the previous component cleanly.
+
+```html
+<script>
+  yq.define('yq-tabs', {
+    template: `
+      <div>
+        <yq-component yq-is="{{ current }}"></yq-component>
+        <button yq-on:click="showB">switch</button>
+      </div>
+    `,
+    script: function () {
+      return {
+        state: { current: 'yq-view-a' },
+        showB: function (state) {
+          state.current = 'yq-view-b'
+        }
+      }
+    }
+  })
+</script>
+```
+
 ## Styling and theming
 
 The `style` field is rewritten so its selectors only match inside the component's own subtree. Two instances of the same component share a single style injection, and the style is removed once the last instance is gone.
@@ -330,6 +503,36 @@ Remove a component element from the page and its state, DOM and listeners are go
 
 `panel.remove()` triggers the unmount path for that instance — nothing else is required and no per-usage teardown code is needed. For components created through the imperative API, register effect cleanups on the instance and unmounting runs them automatically (see the next section).
 
+`panel.remove()` triggers the unmount path for that instance — nothing else is required and no per-usage teardown code is needed. For components created through the imperative API, register effect cleanups on the instance and unmounting runs them automatically (see the next section).
+
+### Declarative lifecycle hooks
+
+A `script` function may return `onMount`, `onUpdate` and `onUnmount` functions next to the state and handlers. They are invoked with the reactive state at the matching phase — mounting after the first render, updating after each refresh, and unmounting before teardown — which covers fetch-on-mount and timer cleanup without the imperative API.
+
+```html
+<script>
+  yq.define('yq-clock', {
+    template: '<span>{{ now }}</span>',
+    script: function () {
+      return {
+        state: { now: '', timer: null },
+        onMount: function (state) {
+          state.now = new Date().toLocaleTimeString()
+          state.timer = setInterval(function () {
+            state.now = new Date().toLocaleTimeString()
+          }, 1000)
+        },
+        onUnmount: function (state) {
+          clearInterval(state.timer)
+        }
+      }
+    }
+  })
+</script>
+```
+
+Hook names are reserved: they never become event handlers, so a handler named `onMount` in `yq-on:*` is not possible.
+
 ## Imperative API
 
 The declarative path is the primary one, but the runtime also exports an imperative API for programmatic mounting: `createComponent`, `mountComponent`, `updateComponent` and `unmountComponent`, plus `effect` and `setLifecycleHooks` for wiring side effects and observing the lifecycle:
@@ -370,7 +573,8 @@ The declarative path is the primary one, but the runtime also exports an imperat
 | Nothing renders | The runtime path is wrong, or the tag name in HTML differs from the one passed to `define`. Use the same lowercase hyphenated name. |
 | Placeholder text like `{{ count }}` stays visible | The state path does not match a key returned by `script`. Paths are dot-separated: `{{ user.name }}`. |
 | Clicking a button does nothing | The handler name in `yq-on:click` is not one of the functions returned by `script`, or the name is misspelled. |
-| List rows do not react | Rows are keyed by `yq-key`; give each item a stable unique id. Event bindings do not work inside `yq-for` rows — call a state-changing handler from a static part of the component instead. |
+| List rows do not react | Rows are keyed by `yq-key`; give each item a stable unique id. Row handlers resolve the row item through the row scope (`state.item`). |
+| Conditional blocks never appear | `yq-if` / `yq-show` read state paths, not expressions. Compute the flag in a handler or a `derived` value and bind that path. |
 | Styles leak or do not apply | Styles written in the component `style` field are scoped automatically. Page-level rules must be added via `yq.scoper.addGlobalStyle`. |
 | A component crashes | The error boundary renders a placeholder and logs a structured warning; other components on the page keep working. |
 | Only one update happens for several writes | That is by design. Writes inside one synchronous task are batched into a single refresh. |

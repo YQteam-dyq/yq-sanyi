@@ -1,4 +1,4 @@
-export const version = '0.2.0'
+export const version = '0.3.0'
 
 import { getDebugManager } from './debug-manager-simple.js'
 import { ErrorBoundary } from './error-boundary.js'
@@ -16,6 +16,7 @@ const VOID_TAGS = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'i
 
 export type ParsedPart = { static: string } | { path: string[] }
 export interface ListSpec { itemVar: string; indexVar: string | null; itemsPath: string[]; keyProp: string | null }
+export type CondSpec = { mode: 'if' | 'elseif' | 'else' | 'show'; path: string[] | null }
 export interface SNode {
   id: number
   tag: string
@@ -24,6 +25,7 @@ export interface SNode {
   text: ParsedPart[]
   children: SNode[]
   list: ListSpec | null
+  cond: CondSpec | null
 }
 export type Slot =
   | { kind: 'text'; nodeId: number; partIndex: number; path?: string[] }
@@ -31,6 +33,8 @@ export type Slot =
   | { kind: 'bool'; nodeId: number; attr: string; path?: string[] }
   | { kind: 'event'; nodeId: number; event: string; handler: string }
   | { kind: 'list'; nodeId: number; itemVar: string; indexVar: string | null; itemsPath: string[]; keyProp: string | null }
+  | { kind: 'model'; nodeId: number; path: string[]; trim: boolean; number: boolean; lazy: boolean }
+  | { kind: 'dynamic'; nodeId: number; path?: string[] }
 export interface Cdo {
   name: string
   root: SNode
@@ -120,6 +124,7 @@ export interface UpdateLog {
 export interface ComponentInstance {
   name: string
   state: Record<string, any>
+  props: Record<string, any>
   derivedStates: Record<string, any>
   effects: (() => void)[]
   context: RenderContext
@@ -137,6 +142,7 @@ export interface ComponentInstance {
   errorCount: number
   lastErrorTime: number | null
   autoSync?: boolean
+  requestUpdate?: () => void
   handlers?: Record<string, (...args: any[]) => any>
   eventCleanups?: Array<() => void>
 }
@@ -338,6 +344,25 @@ function parseTemplate(name: string, template: string): { root: SNode; nodes: SN
       if (eventName.length === 0) error('empty event name in yq-on')
       if (value.trim().length === 0) error('empty handler in yq-on:' + eventName)
       slots.push({ kind: 'event', nodeId: node.id, event: eventName, handler: value.trim() })
+    } else if (attr === 'yq-if' || attr === 'yq-else-if' || attr === 'yq-else' || attr === 'yq-show') {
+      const mode = attr === 'yq-if' ? 'if' : attr === 'yq-else-if' ? 'elseif' : attr === 'yq-else' ? 'else' : 'show'
+      if (mode !== 'else' && value.trim().length === 0) error('empty condition in ' + attr)
+      node.cond = { mode, path: mode === 'else' ? null : parsePath(value.trim()) }
+    } else if (attr === 'yq-model' || attr.startsWith('yq-model.')) {
+      if (value.trim().length === 0) error('empty path in yq-model')
+      const modifiers = attr.slice('yq-model'.length).split('.').filter(Boolean)
+      slots.push({ kind: 'model', nodeId: node.id, path: parsePath(value.trim()), trim: modifiers.includes('trim'), number: modifiers.includes('number'), lazy: modifiers.includes('lazy') })
+    } else if (attr === 'yq-is' && node.tag === 'yq-component') {
+      const trimmed = value.trim()
+      if (trimmed.startsWith('{{') && trimmed.endsWith('}}')) {
+        const inner = trimmed.substring(2, trimmed.length - 2).trim()
+        if (inner.length === 0) error('empty expression in yq-is')
+        slots.push({ kind: 'dynamic', nodeId: node.id, path: parsePath(inner) })
+      } else {
+        if (trimmed.length === 0) error('empty component name in yq-is')
+        slots.push({ kind: 'dynamic', nodeId: node.id })
+        node.staticAttrs['yq-is'] = trimmed
+      }
     } else {
       const dynValue = parseAttributeValue(value, attr, slots, node.id)
       if (dynValue.length === 1 && 'static' in dynValue[0] && dynValue[0].static === value) {
@@ -356,7 +381,8 @@ function parseTemplate(name: string, template: string): { root: SNode; nodes: SN
       dynAttrs: {},
       text: [],
       children: [],
-      list: null
+      list: null,
+      cond: null
     }
     nodes.push(node)
 
@@ -526,7 +552,8 @@ function parseTemplate(name: string, template: string): { root: SNode; nodes: SN
         dynAttrs: {},
         text: parseTextParts(remaining, slots, nodeId - 1),
         children: [],
-        list: null
+        list: null,
+        cond: null
       }
       nodes.push(textNode)
       rootResult = { node: textNode, remaining: '' }
@@ -541,6 +568,8 @@ function parseTemplate(name: string, template: string): { root: SNode; nodes: SN
   if (!rootResult) error('no root element found')
 
   const root = rootResult.node
+
+  if (root.cond) error('yq-if / yq-show on the root element is not supported')
 
   return { root, nodes, slots }
 }
