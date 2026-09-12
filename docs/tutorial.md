@@ -138,7 +138,7 @@ Add `yq-for="item in items"` to a container element. The framework renders one c
 </ul>
 ```
 
-`yq-key` names the per-item stable field. Rows are matched by key and reused instead of being rebuilt, which keeps stateful content and minimizes DOM writes. A keyed row should not be nested inside another `yq-for` — render the inner list through a child component instead.
+`yq-key` names the per-item stable field. Rows are matched by key and reused instead of being rebuilt, which keeps stateful content and minimizes DOM writes. A keyed row should not be nested inside another `yq-for` — render the inner list through a child component instead. Keys are expected to be unique per item; when a value repeats, the rows are matched one item at a time in document order and every row left over is released, but only unique keys give stable reuse.
 
 Write `yq-for="(item, index) in items"` when a row needs its position in the list:
 

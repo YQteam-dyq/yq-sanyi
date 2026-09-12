@@ -492,3 +492,57 @@ test('row state writes to the component scope trigger a single refresh', async (
   assert.equal(updateCount(), baseline + 1)
   host.disconnectedCallback()
 })
+
+test('rows sharing a yq-key release their listeners when the duplicate is dropped', async () => {
+  installGlobals()
+  define('x-dup-keys', {
+    name: 'x-dup-keys',
+    template: '<div><span>{{ hits }}</span><button yq-on:click="keep">keep</button><div yq-for="item in items" yq-key="id"><button yq-on:click="bump">go</button><span>{{ item.label }}</span></div></div>',
+    style: '',
+    script: function () {
+      return {
+        state: {
+          hits: 0,
+          items: [
+            { id: 1, label: 'a' },
+            { id: 1, label: 'b' }
+          ]
+        },
+        bump: function (state) {
+          state.hits = state.hits + 1
+        },
+        keep: function (state) {
+          state.items = state.items.slice(0, 1)
+        }
+      }
+    }
+  })
+  const host = createElementLike('x-dup-keys')
+  host.isConnected = true
+  host.connectedCallback()
+  const instance = host._yqInstance
+  const root = instance.root
+  const hits = root.children[0]
+  const keepButton = root.children[1]
+  const rows = root.children[2]
+  assert.equal(rows.children.length, 2)
+  const survivingRow = rows.children[0]
+  const duplicateRow = rows.children[1]
+  duplicateRow.children[0].dispatch('click')
+  await flush()
+  assert.equal(hits.textContent, '1')
+  keepButton.dispatch('click')
+  await flush()
+  assert.equal(rows.children.length, 1)
+  const droppedRow = rows.children[0] === survivingRow ? duplicateRow : survivingRow
+  assert.equal(droppedRow.parentElement, null)
+  assert.equal(droppedRow.children[0].listeners.click.length, 0)
+  assert.equal(droppedRow._yqRowEventCleanups.length, 0)
+  droppedRow.children[0].dispatch('click')
+  await flush()
+  assert.equal(hits.textContent, '1')
+  rows.children[0].children[0].dispatch('click')
+  await flush()
+  assert.equal(hits.textContent, '2')
+  host.disconnectedCallback()
+})

@@ -248,20 +248,25 @@ function renderList(cdo: Cdo, node: Element, slot: Extract<Slot, { kind: 'list' 
   const rawItems = resolvePath(context.state, slot.itemsPath)
   const items = Array.isArray(rawItems) ? rawItems : []
   const bindings = rowBindings(context)
-  const existing = new Map<string, Element>()
+  const existing = new Map<string, Element[]>()
   for (const child of Array.from(node.children)) {
     const key = (child as HTMLElement).dataset.yqKey
-    if (key != null) existing.set(key, child)
+    if (key == null) continue
+    const bucket = existing.get(key)
+    if (bucket) {
+      bucket.push(child)
+    } else {
+      existing.set(key, [child])
+    }
   }
   const fragment = document.createDocumentFragment()
   for (let i = 0; i < items.length; i++) {
     const item = items[i]
     const key = slot.keyProp ? String(item[slot.keyProp]) : String(i)
-    const existingRow = existing.get(key)
+    const bucket = existing.get(key)
     let rowElement: Element
-    if (existingRow) {
-      existing.delete(key)
-      rowElement = existingRow
+    if (bucket && bucket.length > 0) {
+      rowElement = bucket.shift() as Element
     } else {
       rowElement = cloneStaticNode(containerNode)
     }
@@ -270,12 +275,14 @@ function renderList(cdo: Cdo, node: Element, slot: Extract<Slot, { kind: 'list' 
     ;(rowElement as HTMLElement).dataset.yqKey = key
     fragment.appendChild(rowElement)
   }
-  for (const leftover of existing.values()) {
-    unbindRowEvents(leftover)
-    if (typeof (leftover as HTMLElement).remove === 'function') {
-      ;(leftover as HTMLElement).remove()
-    } else {
-      ;(leftover as HTMLElement).parentElement?.removeChild(leftover)
+  for (const rowsWithSameKey of existing.values()) {
+    for (const leftover of rowsWithSameKey) {
+      unbindRowEvents(leftover)
+      if (typeof (leftover as HTMLElement).remove === 'function') {
+        ;(leftover as HTMLElement).remove()
+      } else {
+        ;(leftover as HTMLElement).parentElement?.removeChild(leftover)
+      }
     }
   }
   node.innerHTML = ''
