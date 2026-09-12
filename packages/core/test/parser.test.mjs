@@ -56,15 +56,15 @@ test('非整值属性抛错', () => {
 test('list 槽完整语法', () => {
   const result = parseTemplate('test', '<ul><li yq-for="p in products" yq-key="id">{{ p.name }}</li></ul>')
   assert.strictEqual(result.slots.length, 2)
-  assert.deepEqual(result.slots[0], { kind: 'list', nodeId: 1, itemVar: 'p', itemsPath: ['products'], keyProp: 'id' })
+  assert.deepEqual(result.slots[0], { kind: 'list', nodeId: 1, itemVar: 'p', indexVar: null, itemsPath: ['products'], keyProp: 'id' })
   assert.deepEqual(result.slots[1], { kind: 'text', nodeId: 1, partIndex: 0 })
-  assert.deepEqual(result.root.children[0].list, { itemVar: 'p', itemsPath: ['products'], keyProp: 'id' })
+  assert.deepEqual(result.root.children[0].list, { itemVar: 'p', indexVar: null, itemsPath: ['products'], keyProp: 'id' })
 })
 
 test('list 省略写法', () => {
   const result = parseTemplate('test', '<div yq-for="products"></div>')
   assert.strictEqual(result.slots.length, 1)
-  assert.deepEqual(result.slots[0], { kind: 'list', nodeId: 0, itemVar: 'item', itemsPath: ['products'], keyProp: null })
+  assert.deepEqual(result.slots[0], { kind: 'list', nodeId: 0, itemVar: 'item', indexVar: null, itemsPath: ['products'], keyProp: null })
 })
 
 test('列表内嵌套列表抛错', () => {
@@ -146,7 +146,7 @@ test('dynAttrs 与 yq-for 不入 staticAttrs', () => {
   const result = parseTemplate('test', '<div yq-for="items" yq-key="id" class="static">{{ item.name }}</div>')
   assert.deepEqual(result.root.staticAttrs, { class: 'static' })
   assert.deepEqual(result.root.dynAttrs, {})
-  assert.deepEqual(result.root.list, { itemVar: 'item', itemsPath: ['items'], keyProp: 'id' })
+  assert.deepEqual(result.root.list, { itemVar: 'item', indexVar: null, itemsPath: ['items'], keyProp: 'id' })
 })
 
 test('错误消息前缀', () => {
@@ -323,6 +323,30 @@ test('复杂文本混合带多个表达式', () => {
     { static: ') - Discount: $' },
     { path: ['discount'] }
   ])
+})
+
+test('yq-for row binding exposes the item and the row index', () => {
+  const result = parseTemplate('test', '<ul><li yq-for="(row, i) in rows" yq-key="id">{{ i }}:{{ row.name }}</li></ul>')
+  const listSlot = result.slots.find((slot) => slot.kind === 'list')
+  assert.deepEqual(listSlot, { kind: 'list', nodeId: 1, itemVar: 'row', indexVar: 'i', itemsPath: ['rows'], keyProp: 'id' })
+  assert.deepEqual(result.root.children[0].list, { itemVar: 'row', indexVar: 'i', itemsPath: ['rows'], keyProp: 'id' })
+  const textSlots = result.slots.filter((slot) => slot.kind === 'text')
+  assert.deepEqual(textSlots, [
+    { kind: 'text', nodeId: 1, partIndex: 0 },
+    { kind: 'text', nodeId: 1, partIndex: 2 }
+  ])
+})
+
+test('yq-for rejects malformed row bindings', () => {
+  assert.throws(() => parseTemplate('test', '<div yq-for="(row) in rows"></div>'), { message: 'invalid yq-for row binding: (row) in rows' })
+  assert.throws(() => parseTemplate('test', '<div yq-for="(row, ) in rows"></div>'), { message: 'invalid yq-for row binding: (row, ) in rows' })
+  assert.throws(() => parseTemplate('test', '<div yq-for="(row, row) in rows"></div>'), { message: 'duplicate yq-for row binding name: (row, row) in rows' })
+})
+
+test('yq-for keeps a single item variable when no row binding is used', () => {
+  const result = parseTemplate('test', '<div yq-for="entry in entries"></div>')
+  const listSlot = result.slots.find((slot) => slot.kind === 'list')
+  assert.deepEqual(listSlot, { kind: 'list', nodeId: 0, itemVar: 'entry', indexVar: null, itemsPath: ['entries'], keyProp: null })
 })
 
 test('带嵌套列表的错误处理', () => {

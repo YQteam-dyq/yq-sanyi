@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>yq-sanyi list row events</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 24px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f8fafc;
+      color: #0f172a;
+    }
+    main {
+      max-width: 760px;
+      margin: 0 auto;
+    }
+    h1 {
+      font-size: 22px;
+      margin: 0 0 6px;
+    }
+    p.lede {
+      margin: 0 0 24px;
+      color: #475569;
+    }
+    yq-task-board,
+    yq-cart {
+      display: block;
+      margin-bottom: 24px;
+      padding: 20px;
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Events and indexes inside <code>yq-for</code> rows</h1>
+    <p class="lede">
+      Each row gets its own state overlay, so a handler bound inside the row reads its own item.
+      Rows are matched by key, stay put while the list changes, and release their listeners when removed.
+    </p>
+
+    <yq-task-board></yq-task-board>
+    <yq-cart></yq-cart>
+  </main>
+
+  <script src="../packages/core/dist/core.global.js"></script>
+  <script>
+    yq.define('yq-task-board', {
+      template: '<div><h2>Tasks ({{ openCount }} open)</h2><div class="rows"><div yq-for="(task, position) in tasks" yq-key="id" class="row"><span class="pos">{{ position }}.</span><span class="title">{{ task.title }}</span><button yq-on:click="toggle">{{ task.label }}</button><button yq-on:click="drop">remove</button></div></div><div class="composer"><input class="draft" placeholder="add a task"><button yq-on:click="add">add</button></div></div>',
+      style: 'h2 { font-size: 16px; margin: 0 0 12px; } .row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid #e2e8f0; } .title { flex: 1; } .pos { color: #94a3b8; min-width: 22px; } button { padding: 4px 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: #f1f5f9; cursor: pointer; } .draft { flex: 1; padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; } .composer { display: flex; gap: 8px; margin-top: 12px; }',
+      script: function () {
+        let nextId = 4
+        return {
+          state: {
+            openCount: 3,
+            tasks: [
+              { id: 1, title: 'write the parser', label: 'close' },
+              { id: 2, title: 'bind row events', label: 'close' },
+              { id: 3, title: 'ship it', label: 'close' }
+            ]
+          },
+          toggle: function (state) {
+            state.task.open = true
+            state.task.label = 'open'
+            state.openCount = state.openCount - 1
+          },
+          drop: function (state) {
+            state.tasks = state.tasks.filter(function (task) {
+              return task.id !== state.task.id
+            })
+            state.openCount = state.tasks.filter(function (task) {
+              return !task.open
+            }).length
+          },
+          add: function (state, event) {
+            const input = event.target.parentElement.querySelector('.draft')
+            const title = input.value.trim()
+            if (!title) return
+            state.tasks = state.tasks.concat([{ id: nextId, title: title, label: 'close' }])
+            state.openCount = state.openCount + 1
+            nextId = nextId + 1
+            input.value = ''
+          }
+        }
+      }
+    })
+
+    yq.define('yq-cart', {
+      template: '<div><h2>Cart total: {{ total }}</h2><div class="rows"><div yq-for="(line, index) in lines" yq-key="sku" class="row"><span class="name">{{ index }}. {{ line.name }}</span><span class="qty">x{{ line.qty }}</span><button yq-on:click="inc">+</button><button yq-on:click="dec">-</button></div></div></div>',
+      style: 'h2 { font-size: 16px; margin: 0 0 12px; } .row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid #e2e8f0; } .name { flex: 1; } .qty { color: #64748b; min-width: 34px; } button { width: 28px; border: 1px solid #cbd5e1; border-radius: 6px; background: #f1f5f9; cursor: pointer; }',
+      script: function () {
+        function sumOf(lines) {
+          return lines.reduce(function (sum, line) {
+            return sum + line.qty * line.price
+          }, 0)
+        }
+        const seed = [
+          { sku: 'a-1', name: 'sticker pack', qty: 2, price: 5 },
+          { sku: 'b-2', name: 'notebook', qty: 1, price: 12 },
+          { sku: 'c-3', name: 'pen', qty: 3, price: 3 }
+        ]
+        return {
+          state: {
+            total: sumOf(seed),
+            lines: seed
+          },
+          inc: function (state) {
+            state.line.qty = state.line.qty + 1
+            state.total = sumOf(state.lines)
+          },
+          dec: function (state) {
+            state.line.qty = Math.max(0, state.line.qty - 1)
+            state.total = sumOf(state.lines)
+          }
+        }
+      }
+    })
+  </script>
+</body>
+</html>

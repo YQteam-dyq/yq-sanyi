@@ -96,7 +96,108 @@ function collectSubtreeIds(node: SNode, out: Set<number>): void {
   }
 }
 
-function fillListRow(cdo: Cdo, containerNode: SNode, rowElement: Element, itemState: Record<string, any>): void {
+export interface RowEventBindings {
+  handlers: Record<string, (...args: any[]) => any>
+  host: Element | null
+}
+
+interface RowEventHolder {
+  _yqRowEventCleanups?: Array<() => void>
+}
+
+function createRowState(state: Record<string, any>, slot: Extract<Slot, { kind: 'list' }>, item: any, index: number): Record<string, any> {
+  const overlay = new Map<string | symbol, any>()
+  overlay.set(slot.itemVar, item)
+  if (slot.indexVar) {
+    overlay.set(slot.indexVar, index)
+  }
+  return new Proxy(state, {
+    get(target, key, receiver) {
+      if (overlay.has(key)) return overlay.get(key)
+      return Reflect.get(target, key, receiver)
+    },
+    set(target, key, value, receiver) {
+      if (overlay.has(key)) {
+        overlay.set(key, value)
+        return true
+      }
+      return Reflect.set(target, key, value, receiver)
+    },
+    has(target, key) {
+      if (overlay.has(key)) return true
+      return Reflect.has(target, key)
+    },
+    ownKeys(target) {
+      const keys = new Set<string | symbol>(Reflect.ownKeys(target))
+      for (const key of overlay.keys()) {
+        keys.add(key)
+      }
+      return Array.from(keys)
+    },
+    getOwnPropertyDescriptor(target, key) {
+      if (overlay.has(key)) {
+        return { value: overlay.get(key), writable: true, enumerable: true, configurable: true }
+      }
+      return Reflect.getOwnPropertyDescriptor(target, key)
+    }
+  }) as Record<string, any>
+}
+
+function rowBindings(context: RenderContext): RowEventBindings | undefined {
+  if (!context.handlers) return undefined
+  return { handlers: context.handlers, host: context.host || null }
+}
+
+function unbindRowEvents(rowElement: Element): void {
+  const holder = rowElement as Element & RowEventHolder
+  const cleanups = holder._yqRowEventCleanups
+  if (!cleanups || cleanups.length === 0) return
+  for (const cleanup of cleanups) {
+    cleanup()
+  }
+  holder._yqRowEventCleanups = []
+}
+
+function unbindRowEventsIn(node: Element | null): void {
+  if (!node) return
+  const holder = node as Element & RowEventHolder
+  if (holder._yqRowEventCleanups && holder._yqRowEventCleanups.length > 0) {
+    unbindRowEvents(node)
+  }
+  for (const child of Array.from(node.children)) {
+    unbindRowEventsIn(child)
+  }
+}
+
+function bindRowEvents(cdo: Cdo, containerNode: SNode, rowElement: Element, rowCache: Map<number, Element>, rowState: Record<string, any>, bindings: RowEventBindings): void {
+  unbindRowEvents(rowElement)
+  const rowIds = new Set<number>()
+  collectSubtreeIds(containerNode, rowIds)
+  const cleanups: Array<() => void> = []
+  for (const slot of cdo.slots) {
+    if (slot.kind !== 'event') continue
+    if (!rowIds.has(slot.nodeId)) continue
+    const target = slot.nodeId === containerNode.id ? rowElement : rowCache.get(slot.nodeId)
+    if (!target) continue
+    const handler = bindings.handlers[slot.handler]
+    if (typeof handler !== 'function') continue
+    const listener = (event: Event) => {
+      try {
+        handler.call(bindings.host || target, rowState, event)
+      } catch (error) {
+        console.error(`[yq:event] handler "${slot.handler}" failed:`, error)
+      }
+    }
+    target.addEventListener(slot.event, listener as EventListener)
+    cleanups.push(() => {
+      target.removeEventListener(slot.event, listener as EventListener)
+    })
+  }
+  const holder = rowElement as Element & RowEventHolder
+  holder._yqRowEventCleanups = cleanups
+}
+
+function fillListRow(cdo: Cdo, containerNode: SNode, rowElement: Element, itemState: Record<string, any>, bindings?: RowEventBindings): void {
   const rowIds = new Set<number>()
   collectSubtreeIds(containerNode, rowIds)
   const rowContext = createRenderContext(itemState, cdo.slots)
@@ -114,6 +215,7 @@ function fillListRow(cdo: Cdo, containerNode: SNode, rowElement: Element, itemSt
   indexRow(rowElement)
   for (const childSlot of cdo.slots) {
     if (childSlot.kind === 'list') continue
+    if (childSlot.kind === 'event') continue
     if (!rowIds.has(childSlot.nodeId)) continue
     if (childSlot.nodeId === containerNode.id && childSlot.kind === 'text' && containerNode.children.length > 0) continue
     const target = childSlot.nodeId === containerNode.id ? rowElement : rowCache.get(childSlot.nodeId)
@@ -126,14 +228,17 @@ function fillListRow(cdo: Cdo, containerNode: SNode, rowElement: Element, itemSt
       fillBoolSlot(target, childSlot, rowContext)
     }
   }
+  if (bindings) {
+    bindRowEvents(cdo, containerNode, rowElement, rowCache, itemState, bindings)
+  }
 }
 
-function createListItem(cdo: Cdo, slot: Extract<Slot, { kind: 'list' }>, item: any, context: RenderContext): Element {
+function createListItem(cdo: Cdo, slot: Extract<Slot, { kind: 'list' }>, item: any, context: RenderContext, index = 0): Element {
   const containerNode = findNode(cdo, slot.nodeId)
   if (!containerNode) return document.createElement('div')
-  const itemState = { ...context.state, [slot.itemVar]: item }
+  const itemState = createRowState(context.state, slot, item, index)
   const rowElement = cloneStaticNode(containerNode)
-  fillListRow(cdo, containerNode, rowElement, itemState)
+  fillListRow(cdo, containerNode, rowElement, itemState, rowBindings(context))
   return rowElement
 }
 
@@ -142,33 +247,42 @@ function renderList(cdo: Cdo, node: Element, slot: Extract<Slot, { kind: 'list' 
   if (!containerNode) return
   const rawItems = resolvePath(context.state, slot.itemsPath)
   const items = Array.isArray(rawItems) ? rawItems : []
-  const existing = new Map<string, Element>()
+  const bindings = rowBindings(context)
+  const existing = new Map<string, Element[]>()
   for (const child of Array.from(node.children)) {
     const key = (child as HTMLElement).dataset.yqKey
-    if (key != null) existing.set(key, child)
+    if (key == null) continue
+    const bucket = existing.get(key)
+    if (bucket) {
+      bucket.push(child)
+    } else {
+      existing.set(key, [child])
+    }
   }
   const fragment = document.createDocumentFragment()
   for (let i = 0; i < items.length; i++) {
     const item = items[i]
     const key = slot.keyProp ? String(item[slot.keyProp]) : String(i)
-    const existingRow = existing.get(key)
+    const bucket = existing.get(key)
     let rowElement: Element
-    if (existingRow) {
-      existing.delete(key)
-      rowElement = existingRow
+    if (bucket && bucket.length > 0) {
+      rowElement = bucket.shift() as Element
     } else {
       rowElement = cloneStaticNode(containerNode)
     }
-    const itemState = { ...context.state, [slot.itemVar]: item }
-    fillListRow(cdo, containerNode, rowElement, itemState)
+    const itemState = createRowState(context.state, slot, item, i)
+    fillListRow(cdo, containerNode, rowElement, itemState, bindings)
     ;(rowElement as HTMLElement).dataset.yqKey = key
     fragment.appendChild(rowElement)
   }
-  for (const leftover of existing.values()) {
-    if (typeof (leftover as HTMLElement).remove === 'function') {
-      ;(leftover as HTMLElement).remove()
-    } else {
-      ;(leftover as HTMLElement).parentElement?.removeChild(leftover)
+  for (const rowsWithSameKey of existing.values()) {
+    for (const leftover of rowsWithSameKey) {
+      unbindRowEvents(leftover)
+      if (typeof (leftover as HTMLElement).remove === 'function') {
+        ;(leftover as HTMLElement).remove()
+      } else {
+        ;(leftover as HTMLElement).parentElement?.removeChild(leftover)
+      }
     }
   }
   node.innerHTML = ''
@@ -315,6 +429,7 @@ function bindEvents(instance: ComponentInstance): void {
 }
 
 function unbindEvents(instance: ComponentInstance): void {
+  unbindRowEventsIn(instance.root)
   if (!instance.eventCleanups) return
   for (const cleanup of instance.eventCleanups) {
     cleanup()
@@ -513,6 +628,7 @@ function createComponent(options: ComponentOptions): ComponentInstance {
   const root = renderSkeleton(cdo, container)
 
   context.nodeCache = populateNodeCache(cdo, root)
+  context.host = container
   
   const debugManager = getDebugManager()
   const instance: ComponentInstance = { 
@@ -621,6 +737,9 @@ function createInstanceFromCdo(name: string, cdo: Cdo, host: HTMLElement): Compo
   }
 
   instance.state = createStateProxy(state, requestUpdate)
+  instance.context.state = instance.state
+  instance.context.handlers = handlers
+  instance.context.host = host
   
   debugManager.trackComponent(instance)
   
@@ -911,6 +1030,9 @@ export {
   fillBoolSlot,
   createListItem,
   fillListSlot,
+  createRowState,
+  bindRowEvents,
+  unbindRowEvents,
   bindEvents,
   unbindEvents
 }
