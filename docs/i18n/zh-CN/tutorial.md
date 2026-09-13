@@ -2,7 +2,7 @@
 
 从零开始学会 yq-sanyi：声明式标签、模板语法、状态与处理函数、组件嵌套、样式与生命周期。文中所有示例都是可以直接保存并打开的普通 HTML 文件。
 
-> English: [English tutorial](./tutorial.md)
+> English: [English tutorial](../../tutorial.md)
 
 ## 目录
 
@@ -138,7 +138,49 @@ npm run serve
 </ul>
 ```
 
-`yq-key` 指定条目的稳定字段。行按 key 匹配并复用而非重建，能保留行内状态并最小化 DOM 写入。带 key 的行不要嵌套在另一个 `yq-for` 里，且列表行内不支持事件绑定——参见[问题排查](#问题排查)。
+`yq-key` 指定条目的稳定字段。行按 key 匹配并复用而非重建，能保留行内状态并最小化 DOM 写入。带 key 的行不要嵌套在另一个 `yq-for` 里——请把内层列表放进子组件渲染。
+
+### 条件渲染
+
+`yq-if="path"` 只在状态路径为真时渲染元素。`yq-else-if` 与 `yq-else` 直接写在后续兄弟元素上构成分支链；`yq-show` 则把元素保留在 DOM 中，仅切换其 `hidden` 属性。与所有绑定一致，条件是状态路径——更复杂的判断请用处理函数或 `derived` 值算好再绑定。
+
+```html
+<nav>
+  <a yq-if="user.isAdmin" href="/admin">管理</a>
+  <a yq-else-if="user.isGuest" href="/login">登录</a>
+  <a yq-else href="/profile">个人中心</a>
+  <span yq-show="isLoading">加载中...</span>
+</nav>
+```
+
+条件为假的分支会被移出 DOM：元素由运行时持有、不携带监听器，条件重新为真时按原位置插回。空数组视为假，因此 `yq-if="items"` 可以直接当作"有无条目"来判断。
+
+### 表单双向绑定
+
+`yq-model="path"` 把表单元素与状态双向绑定：状态写入会更新元素，用户输入会在每次 `input` 事件时写回状态。
+
+```html
+<script>
+  yq.define('yq-signup', {
+    template: `
+      <input yq-model.trim="name" type="text">
+      <input yq-model.number="age" type="number">
+      <input yq-model="agreed" type="checkbox">
+      <button yq-on:click="submit" yq-show="name && age">下一步</button>
+    `,
+    script: function () {
+      return {
+        state: { name: '', age: 0, agreed: false },
+        submit: function (state) {
+          state.submitted = true
+        }
+      }
+    }
+  })
+</script>
+```
+
+修饰符定制写回行为：`yq-model.trim` 去除文本首尾空白；`yq-model.number` 用 `Number` 转换取值（无法转换时保留原字符串）；`yq-model.lazy` 改为在 `change` 事件时同步而非每次击键。复选框绑定布尔值，单选框在选中时绑定其 `value`，文本输入、textarea 与 select 以字符串绑定其取值。
 
 ### 事件绑定
 
@@ -213,6 +255,117 @@ npm run serve
     template: '<ul><yq-list-item></yq-list-item></ul>',
     script: function () {
       return { state: {} }
+    }
+  })
+</script>
+```
+
+### Props
+
+写在子组件标签上的属性会作为 props 传给子组件。静态属性以字符串传入；整值绑定 `{{ path }}` 会把父组件的实时值连同类型一起传入，父值变化时子组件随之重渲染。
+
+```html
+<script>
+  yq.define('yq-list-item', {
+    template: '<li>{{ label }}</li>',
+    script: function () {
+      return { state: { label: 'item' } }
+    }
+  })
+
+  yq.define('yq-list', {
+    template: `
+      <ul>
+        <li yq-for="item in items" yq-key="id">
+          <yq-list-item label="{{ item.text }}"></yq-list-item>
+        </li>
+      </ul>
+    `,
+    script: function () {
+      return { state: { items: [{ id: 1, text: 'first' }] } }
+    }
+  })
+</script>
+```
+
+在子组件内部，props 会遮蔽同名 state 键而不修改它：读取时先解析 prop，找不到再回落到子组件 state，因此 `state.label` 反映父组件传入的值，子组件仍保留自己的默认值。对 prop 键赋值会写入子组件本地值并解除该键的遮蔽。
+
+### 插槽
+
+子组件模板可以用 `<slot>` 元素标记占位位置，父组件写在子组件标签之间的内容会被分发到这些占位符。`<slot name="title"></slot>` 声明具名位置，传入的元素用 `slot="title"` 标记归属；不带 `slot` 属性的子元素进入无名的默认插槽。分发的内容以父组件的数据渲染，并处于子组件的作用域内。
+
+```html
+<script>
+  yq.define('yq-modal', {
+    template: `
+      <div class="modal">
+        <header><slot name="title"></slot></header>
+        <div class="body"><slot></slot></div>
+      </div>
+    `,
+    style: '.modal { border: 1px solid #ddd; }',
+    script: function () {
+      return { state: {} }
+    }
+  })
+</script>
+```
+
+```html
+<yq-modal>
+  <h3 slot="title">确认</h3>
+  <p>要保存修改吗？</p>
+  <button yq-on:click="save">保存</button>
+</yq-modal>
+```
+
+### 子传父事件
+
+子组件可以在任意元素上用 `$emit('事件名', 载荷路径)` 处理函数发出自定义事件。父组件在子组件标签上用 `yq-on:事件名="处理函数"` 监听，并从 `event.detail` 读取载荷。载荷路径按子组件状态解析，因此列表行可以发出自己的条目。
+
+```html
+<script>
+  yq.define('yq-row', {
+    template: '<button yq-on:click="$emit(\'select\', item.id)">{{ item.text }}</button>',
+    script: function () {
+      return { state: { item: { id: 1, text: 'one' } } }
+    }
+  })
+
+  yq.define('yq-rows', {
+    template: '<yq-row yq-on:select="onSelect"></yq-row>',
+    script: function () {
+      return {
+        state: { selected: null },
+        onSelect: function (state, event) {
+          state.selected = event.detail
+        }
+      }
+    }
+  })
+</script>
+```
+
+### 动态组件
+
+`<yq-component yq-is="name">` 渲染名字解析到的已注册组件。用整值绑定绑定组件名即可由状态驱动切换，适合标签页与分步向导等场景。未知名字不渲染任何内容；切换时会干净地卸载上一个组件。
+
+```html
+<script>
+  yq.define('yq-tabs', {
+    template: `
+      <div>
+        <yq-component yq-is="{{ current }}"></yq-component>
+        <button yq-on:click="showB">切换</button>
+      </div>
+    `,
+    script: function () {
+      return {
+        state: { current: 'yq-view-a' },
+        showB: function (state) {
+          state.current = 'yq-view-b'
+        }
+      }
     }
   })
 </script>
@@ -302,6 +455,36 @@ npm run serve
 
 `panel.remove()` 会走该实例的卸载路径——无需额外代码，也没有按使用处的清理工作。用命令式 API 创建的组件，可以把 effect 清理注册到实例上，卸载时自动执行（见下一节）。
 
+`panel.remove()` 会走该实例的卸载路径——无需额外代码，也没有按使用处的清理工作。用命令式 API 创建的组件，可以把 effect 清理注册到实例上，卸载时自动执行（见下一节）。
+
+### 声明式生命周期钩子
+
+`script` 函数可以在 state 与处理函数之外返回 `onMount`、`onUpdate`、`onUnmount` 三个函数。它们会在对应阶段以响应式 state 为参数被调用——首次渲染后挂载、每次刷新后更新、卸载前清理——挂载时发请求、卸载时清定时器这类需求不再需要命令式 API。
+
+```html
+<script>
+  yq.define('yq-clock', {
+    template: '<span>{{ now }}</span>',
+    script: function () {
+      return {
+        state: { now: '', timer: null },
+        onMount: function (state) {
+          state.now = new Date().toLocaleTimeString()
+          state.timer = setInterval(function () {
+            state.now = new Date().toLocaleTimeString()
+          }, 1000)
+        },
+        onUnmount: function (state) {
+          clearInterval(state.timer)
+        }
+      }
+    }
+  })
+</script>
+```
+
+钩子名是保留名：它们不会成为事件处理函数，因此无法在 `yq-on:*` 上绑定名为 `onMount` 的处理器。
+
 ## 命令式 API
 
 声明式是主路径，但运行时同样导出命令式 API 供编程式挂载：`createComponent`、`mountComponent`、`updateComponent`、`unmountComponent`，配合 `effect` 与 `setLifecycleHooks` 管理副作用与观察生命周期：
@@ -342,7 +525,8 @@ npm run serve
 | 什么都没渲染 | 运行时路径不对，或 HTML 里的标签名与传给 `define` 的名字不一致。请使用同一个全小写含连字符的名字。 |
 | `{{ count }}` 这类占位符仍然可见 | 状态路径与 `script` 返回的键不匹配。路径用点分隔：`{{ user.name }}`。 |
 | 点击按钮没反应 | `yq-on:click` 里的处理函数名不是 `script` 返回的函数之一，或拼写有误。 |
-| 列表行不更新 | 行按 `yq-key` 匹配；请给每个条目稳定的唯一 id。`yq-for` 行内不支持事件绑定——请在组件静态部分调用修改状态的处理函数。 |
+| 列表行不更新 | 行按 `yq-key` 匹配；请给每个条目稳定的唯一 id。行内处理函数通过行作用域读取条目（`state.item`）。 |
+| 条件块一直不出现 | `yq-if` / `yq-show` 读取的是状态路径而非表达式。请先在处理函数或 `derived` 值中算好布尔结果，再绑定该路径。 |
 | 样式泄漏或不生效 | 写在组件 `style` 字段里的样式自动做作用域隔离；页面级规则必须用 `yq.scoper.addGlobalStyle` 显式注册。 |
 | 组件崩溃 | 错误边界渲染占位符并输出结构化告警，页面其它组件照常工作。 |
 | 多次写入只更新了一次 | 这是设计如此。同一同步任务内的写入会批量合并为一次刷新。 |
@@ -351,4 +535,4 @@ npm run serve
 
 - 查看 [功能与 API 总览](../README.md)。
 - 打开 `examples/full-demo.html`：一页演示标签、事件、列表与状态。
-- 阅读本教程的英文版：[English tutorial](./tutorial.md)。
+- 阅读本教程的英文版：[English tutorial](../../tutorial.md)。

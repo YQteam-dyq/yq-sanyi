@@ -4,13 +4,13 @@
 
 yq-sanyi ("trinity") is a zero-dependency web component framework written from scratch. A component carries its template, behavior and scoped style in one definition — the three parts share one scope, one reactive state and one lifecycle — and becomes a native HTML element you drop straight into any page.
 
-[简体中文](./README.zh-CN.md) · [English tutorial](./docs/tutorial.md) · [中文教程](./docs/tutorial.zh-CN.md)
+[Chinese README](./docs/i18n/zh-CN/README.md) · [English tutorial](./docs/tutorial.md) · [Chinese tutorial](./docs/i18n/zh-CN/tutorial.md)
 
 ![license](https://img.shields.io/badge/license-Apache%202.0-blue)
-![version](https://img.shields.io/badge/version-v0.2.0-2ea44f)
+![version](https://img.shields.io/badge/version-v0.3.0-2ea44f)
 ![repository](https://img.shields.io/badge/github-YQteam--dyq%2Fyq--sanyi-2ea44f)
 ![dependencies](https://img.shields.io/badge/dependencies-zero-brightgreen)
-![size](https://img.shields.io/badge/core-8.5%20kB%20gzipped-2ea44f)
+![size](https://img.shields.io/badge/core-11.3%20kB%20gzipped-2ea44f)
 
 ## Why yq-sanyi
 
@@ -102,10 +102,12 @@ Component tags are native custom elements, so they follow the HTML custom elemen
 
 `define` rejects invalid names with a clear error, so a typo never fails silently in the page.
 
-## What is in v0.2.0
+## What is in v0.3.0
 
 - **Declarative components.** `define` registers a native custom element; tags auto-mount, auto-update and auto-cleanup.
-- **Template.** Text binding `{{ path }}`, whole-value attribute binding, boolean attributes, list rendering `yq-for` with stable `yq-key` and an optional row index, event binding `yq-on:event="handler"` on static parts and inside list rows.
+- **Template.** Text binding `{{ path }}`, whole-value attribute binding, boolean attributes, list rendering `yq-for` with stable `yq-key` and an optional row index, event binding `yq-on:event="handler"` on static parts and inside list rows, conditional rendering with `yq-if` / `yq-else-if` / `yq-else` / `yq-show`, and two-way form binding with `yq-model` plus `.trim` / `.number` / `.lazy` modifiers.
+- **Component model.** Parent-to-child props via tag attributes (static or bound, type-preserving), content distribution through default and named `<slot>` placeholders, child-to-parent `$emit('event', payload)` with `yq-on:` listeners on the child tag, and `<yq-component yq-is="name">` dynamic components driven by state.
+- **Declarative lifecycle.** `onMount` / `onUpdate` / `onUnmount` returned from `script` run at the matching phase with the reactive state, alongside the imperative `setLifecycleHooks`.
 - **State and handlers.** The `script` function returns `{ state, ...handlers }`; writes inside one synchronous task are batched into a single refresh.
 - **Reactive primitives.** `state`, `derived`, `effect` — derived values cache until their dependencies change, effects may return a cleanup function and are disposed with the component.
 - **Rendering.** Static skeleton is cloned once and updates write only the bound slots — no subtree rebuilds, no virtual DOM.
@@ -117,7 +119,8 @@ Component tags are native custom elements, so they follow the HTML custom elemen
 
 | API | Purpose |
 | --- | --- |
-| `yq.define(name, { template, style, script })` | register a component as a custom element |
+| `yq.define(name, { template, style, script })` | register a component as a custom element; `script` may also return `onMount` / `onUpdate` / `onUnmount` hooks |
+| template directives | `yq-if` / `yq-else-if` / `yq-else` / `yq-show`, `yq-for` + `yq-key`, `yq-on:event`, `yq-model[.trim/.number/.lazy]`, `<slot>` / `slot="name"`, `<yq-component yq-is>`, `$emit('name', path)` |
 | `yq.lookup(name)` | resolve a registered definition |
 | `state(initial)` / `derived(fn)` / `effect(fn)` | reactive primitives with dependency tracking |
 | `createComponent`, `mountComponent`, `updateComponent`, `unmountComponent` | imperative lifecycle control |
@@ -142,14 +145,14 @@ The ESM entry is `packages/core/dist/core.mjs`; the global build is `packages/co
 
 - **Nested `yq-for`.** A keyed row cannot contain another `yq-for`. Move the inner list into a child component and render one tag per row.
 - **Shadow DOM is opt-in.** Style isolation uses scope rewriting by default; `createScopedElement` accepts `useShadowDOM` when strong encapsulation is needed.
-- **v0.2.0 is browser-runtime only.** No SSR, no CLI, no non-browser targets. All are deliberate non-goals for this release.
+- **v0.3.0 is browser-runtime only.** No SSR, no CLI, no non-browser targets. All are deliberate non-goals for this release.
 
 ## Documentation
 
 | Document | Description |
 | --- | --- |
 | [English tutorial](./docs/tutorial.md) | Template syntax, state, effects and lifecycle from zero |
-| [中文教程](./docs/tutorial.zh-CN.md) | 模板语法、状态、副作用与生命周期 |
+| [Chinese tutorial](./docs/i18n/zh-CN/tutorial.md) | Template syntax, state, effects and lifecycle |
 
 ## Repository layout
 
