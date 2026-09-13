@@ -4,7 +4,7 @@
 
 yq-sanyi ("trinity") is a zero-dependency web component framework written from scratch. A component carries its template, behavior and scoped style in one definition — the three parts share one scope, one reactive state and one lifecycle — and becomes a native HTML element you drop straight into any page.
 
-[简体中文](./README.zh-CN.md) · [English tutorial](./docs/tutorial.md) · [中文教程](./docs/tutorial.zh-CN.md)
+[Chinese README](./docs/i18n/zh-CN/README.md) · [English tutorial](./docs/tutorial.md) · [Chinese tutorial](./docs/i18n/zh-CN/tutorial.md)
 
 ![license](https://img.shields.io/badge/license-Apache%202.0-blue)
 ![version](https://img.shields.io/badge/version-v0.3.0-2ea44f)
@@ -152,7 +152,7 @@ The ESM entry is `packages/core/dist/core.mjs`; the global build is `packages/co
 | Document | Description |
 | --- | --- |
 | [English tutorial](./docs/tutorial.md) | Template syntax, state, effects and lifecycle from zero |
-| [中文教程](./docs/tutorial.zh-CN.md) | 模板语法、状态、副作用与生命周期 |
+| [Chinese tutorial](./docs/i18n/zh-CN/tutorial.md) | Template syntax, state, effects and lifecycle |
 
 ## Repository layout
 

@@ -2,7 +2,7 @@
 
 Learn yq-sanyi from zero to working components: declarative tags, template syntax, state and handlers, nesting, styling and lifecycle. Every example is a plain HTML file you can save and open.
 
-> 中文版：[中文教程](./tutorial.zh-CN.md)
+> Chinese version: [Chinese tutorial](./i18n/zh-CN/tutorial.md)
 
 ## Table of contents
 
@@ -584,4 +584,4 @@ The declarative path is the primary one, but the runtime also exports an imperat
 - Browse the [features and API overview](../README.md).
 - Open `examples/full-demo.html` for a one-page showcase of tags, events, lists and state.
 - Browse [examples/list-row-events.html](../examples/list-row-events.html) for row handlers, row indexes and keyed reconciliation.
-- Read the Chinese version of this tutorial: [中文教程](./tutorial.zh-CN.md).
+- Read the Chinese version of this tutorial: [Chinese tutorial](./i18n/zh-CN/tutorial.md).

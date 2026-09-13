@@ -2,7 +2,7 @@
 
 从零开始学会 yq-sanyi：声明式标签、模板语法、状态与处理函数、组件嵌套、样式与生命周期。文中所有示例都是可以直接保存并打开的普通 HTML 文件。
 
-> English: [English tutorial](./tutorial.md)
+> English: [English tutorial](../../tutorial.md)
 
 ## 目录
 
@@ -535,4 +535,4 @@ npm run serve
 
 - 查看 [功能与 API 总览](../README.md)。
 - 打开 `examples/full-demo.html`：一页演示标签、事件、列表与状态。
-- 阅读本教程的英文版：[English tutorial](./tutorial.md)。
+- 阅读本教程的英文版：[English tutorial](../../tutorial.md)。

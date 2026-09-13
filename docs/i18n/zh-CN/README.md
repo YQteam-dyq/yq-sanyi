@@ -4,7 +4,7 @@
 
 yq-sanyi（三一，"三位一体"）是一个从零自研的零依赖 Web 组件框架。一个组件把模板、行为与作用域样式封装在一次定义里——三段共享同一个作用域、同一份响应式状态与同一个生命周期——注册后成为可直接放进任意页面的浏览器原生 HTML 元素。
 
-[English](./README.md) · [English tutorial](./docs/tutorial.md) · [中文教程](./docs/tutorial.zh-CN.md)
+[English](../../../README.md) · [English tutorial](../../tutorial.md) · [中文教程](./tutorial.md)
 
 ![license](https://img.shields.io/badge/license-Apache%202.0-blue)
 ![version](https://img.shields.io/badge/version-v0.3.0-2ea44f)
@@ -150,7 +150,7 @@ ESM 入口为 `packages/core/dist/core.mjs`；全局构建为 `packages/core/dis
 | 文档 | 内容 |
 | --- | --- |
 | [English tutorial](./docs/tutorial.md) | Template syntax, state, effects and lifecycle from zero |
-| [中文教程](./docs/tutorial.zh-CN.md) | 模板语法、状态、副作用与生命周期 |
+| [中文教程](./tutorial.md) | 模板语法、状态、副作用与生命周期 |
 
 ## 仓库结构
 
