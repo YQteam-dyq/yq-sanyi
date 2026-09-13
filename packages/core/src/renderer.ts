@@ -106,6 +106,106 @@ function distributeSlotContent(root: Element, captured: Element[]): void {
   }
 }
 
+function collectDistributedNodes(root: Element): Element[] {
+  const out: Element[] = []
+  function walk(el: Element): void {
+    if ((el.tagName || '').toLowerCase() === 'slot') {
+      for (const child of Array.from(el.children || [])) {
+        out.push(child)
+        walk(child)
+      }
+      return
+    }
+    if (isNestedInstanceHost(el)) {
+      return
+    }
+    for (const child of Array.from(el.children || [])) {
+      walk(child)
+    }
+  }
+  walk(root)
+  return out
+}
+
+function bindSlotEvent(element: Element, slot: Extract<Slot, { kind: 'event' }>, parentInstance: ComponentInstance, childInstance: ComponentInstance): void {
+  const handlers = parentInstance.handlers
+  if (!handlers) return
+  const handler = handlers[slot.handler]
+  let listener: ((event: Event) => void) | null = null
+  if (typeof handler === 'function') {
+    listener = (event: Event) => {
+      try {
+        handler.call(parentInstance.container, parentInstance.state, event)
+      } catch (error) {
+        console.error(`[yq:event] handler "${slot.handler}" failed:`, error)
+      }
+    }
+  } else {
+    listener = createEmitListener(slot.handler, () => parentInstance.state, parentInstance.container)
+    if (!listener) return
+  }
+  element.addEventListener(slot.event, listener as EventListener)
+  if (!childInstance.slotEventCleanups) childInstance.slotEventCleanups = []
+  childInstance.slotEventCleanups.push(() => {
+    element.removeEventListener(slot.event, listener as EventListener)
+  })
+}
+
+function renderSlotContent(parentInstance: ComponentInstance | null | undefined, childInstance: ComponentInstance): void {
+  if (!parentInstance) return
+  const distributed = collectDistributedNodes(childInstance.root)
+  if (distributed.length === 0) return
+  const parentNodeIds = new Set(parentInstance.cdo.nodes.map((node) => node.id))
+  const nodeCache = new Map<number, Element>()
+  const subtreeIds = new Set<number>()
+  for (const el of distributed) {
+    const id = parseInt((el as HTMLElement).dataset.yqNodeId || '0', 10)
+    if (!id || !parentNodeIds.has(id)) continue
+    const snode = findNode(parentInstance.cdo, id)
+    if (!snode) continue
+    nodeCache.set(id, el)
+    collectSubtreeIds(snode, subtreeIds)
+  }
+  if (nodeCache.size === 0) return
+  for (const slot of parentInstance.cdo.slots) {
+    if (!subtreeIds.has(slot.nodeId)) continue
+    const target = nodeCache.get(slot.nodeId)
+    if (!target) continue
+    if (slot.kind === 'text') {
+      fillTextSlot(target, slot, parentInstance.context, parentInstance.cdo)
+    } else if (slot.kind === 'attr') {
+      fillAttrSlot(target, slot, parentInstance.context)
+    } else if (slot.kind === 'bool') {
+      fillBoolSlot(target, slot, parentInstance.context)
+    } else if (slot.kind === 'model') {
+      fillModelSlot(target, slot, parentInstance.context)
+    } else if (slot.kind === 'event') {
+      bindSlotEvent(target, slot, parentInstance, childInstance)
+    }
+  }
+  childInstance.slotContent = { parentInstance, nodeCache, subtreeIds }
+}
+
+function updateSlotContent(childInstance: ComponentInstance): void {
+  const info = childInstance.slotContent
+  if (!info) return
+  const { parentInstance, nodeCache, subtreeIds } = info
+  for (const slot of parentInstance.cdo.slots) {
+    if (!subtreeIds.has(slot.nodeId)) continue
+    const target = nodeCache.get(slot.nodeId)
+    if (!target || !target.isConnected) continue
+    if (slot.kind === 'text') {
+      fillTextSlot(target, slot, parentInstance.context, parentInstance.cdo)
+    } else if (slot.kind === 'attr') {
+      fillAttrSlot(target, slot, parentInstance.context)
+    } else if (slot.kind === 'bool') {
+      fillBoolSlot(target, slot, parentInstance.context)
+    } else if (slot.kind === 'model') {
+      fillModelSlot(target, slot, parentInstance.context)
+    }
+  }
+}
+
 function componentTagName(tag: string): boolean {
   if (typeof tag !== 'string' || tag.length === 0) return false
   try {
@@ -475,6 +575,9 @@ function populateNodeCache(cdo: Cdo, root: Element): Map<number, Element> {
   const nodeCache = new Map<number, Element>()
   
   function traverse(element: Element): void {
+    if ((element.tagName || '').toLowerCase() === 'slot') {
+      return
+    }
     const dataset = (element as HTMLElement).dataset
     if (dataset && dataset.yqKey != null) {
       return
@@ -517,6 +620,15 @@ function elementInParent(parent: Element, element: Element): boolean {
   return false
 }
 
+function clearInstanceRefs(element: Element): void {
+  const el = element as unknown as { _yqInstance?: ComponentInstance | null; _yqMounted?: boolean }
+  if ('_yqInstance' in el) el._yqInstance = null
+  if ('_yqMounted' in el) el._yqMounted = false
+  for (const child of Array.from(element.children || [])) {
+    clearInstanceRefs(child)
+  }
+}
+
 function setCondPresence(element: Element, present: boolean): void {
   const holder = element as Element & { _yqCondAnchor?: Element | null; _yqCondParent?: Element | null }
   if (present) {
@@ -546,6 +658,7 @@ function setCondPresence(element: Element, present: boolean): void {
     } else if (typeof parent.removeChild === 'function') {
       parent.removeChild(element)
     }
+    clearInstanceRefs(element)
   }
 }
 
@@ -678,7 +791,7 @@ function bindModelEvents(instance: ComponentInstance, cleanups: Array<() => void
   instance.eventCleanups = cleanups
 }
 
-function renderDynamic(node: Element, slot: Extract<Slot, { kind: 'dynamic' }>, context: RenderContext): void {
+function renderDynamic(node: Element, slot: Extract<Slot, { kind: 'dynamic' }>, context: RenderContext, parentInstance?: ComponentInstance): void {
   const holder = node as Element & { _yqDynamicName?: string | null; _yqDynamicInstance?: ComponentInstance | null }
   const boundName = slot.path ? resolvePath(context.state, slot.path) : undefined
   const name = boundName != null ? String(boundName) : node.getAttribute('yq-is')
@@ -696,7 +809,7 @@ function renderDynamic(node: Element, slot: Extract<Slot, { kind: 'dynamic' }>, 
     entry = undefined
   }
   if (!entry) return
-  const child = createInstanceFromCdo(entry.name, entry.cdo, node as HTMLElement)
+  const child = createInstanceFromCdo(entry.name, entry.cdo, node as HTMLElement, parentInstance)
   mountComponent(child)
   bindEvents(child)
   const host = node as unknown as { _yqInstance?: ComponentInstance | null }
@@ -704,7 +817,7 @@ function renderDynamic(node: Element, slot: Extract<Slot, { kind: 'dynamic' }>, 
   holder._yqDynamicInstance = child
 }
 
-function fillSlots(cdo: Cdo, context: RenderContext): void {
+function fillSlots(cdo: Cdo, context: RenderContext, instance?: ComponentInstance): void {
   const rootNode = context.nodeCache.get(cdo.root.id)
   
   if (!rootNode) {
@@ -752,15 +865,15 @@ function fillSlots(cdo: Cdo, context: RenderContext): void {
     } else if (slot.kind === 'model') {
       fillModelSlot(node, slot, context)
     } else if (slot.kind === 'dynamic') {
-      renderDynamic(node, slot, context)
+      renderDynamic(node, slot, context, instance)
     }
   }
 
   syncNestedProps(cdo, context)
 }
 
-function updateSlots(cdo: Cdo, context: RenderContext): void {
-  fillSlots(cdo, context)
+function updateSlots(cdo: Cdo, context: RenderContext, instance?: ComponentInstance): void {
+  fillSlots(cdo, context, instance)
 }
 
 const EMIT_PATTERN = /^\$emit\(\s*(['"])([^'"]+)\1\s*(?:,\s*([\w.$]+))?\s*\)$/
@@ -1095,7 +1208,7 @@ function extractDeclarativeHooks(result: Record<string, any> | null, instance: C
   return hooks
 }
 
-function createInstanceFromCdo(name: string, cdo: Cdo, host: HTMLElement): ComponentInstance {
+function createInstanceFromCdo(name: string, cdo: Cdo, host: HTMLElement, parentInstance?: ComponentInstance | null): ComponentInstance {
   const scriptResult = runScriptResult(cdo)
   const state: Record<string, any> = extractScriptState(scriptResult)
   const handlers = extractHandlers(scriptResult)
@@ -1110,7 +1223,7 @@ function createInstanceFromCdo(name: string, cdo: Cdo, host: HTMLElement): Compo
   const root = renderSkeleton(cdo, host)
   distributeSlotContent(root, capturedSlotContent)
   context.nodeCache = populateNodeCache(cdo, root)
-  
+
   const debugManager = getDebugManager()
   const initialProps = collectElementProps(host)
   const instance: ComponentInstance = {
@@ -1126,7 +1239,7 @@ function createInstanceFromCdo(name: string, cdo: Cdo, host: HTMLElement): Compo
     lifecycleHooks: {},
     lifecycleState: 'created',
     children: [],
-    parent: null,
+    parent: parentInstance || null,
     updateLogs: [],
     errorInfo: null,
     errorBoundary: null,
@@ -1136,6 +1249,10 @@ function createInstanceFromCdo(name: string, cdo: Cdo, host: HTMLElement): Compo
     autoSync: true,
     handlers
   }
+  if (parentInstance) {
+    parentInstance.children.push(instance)
+  }
+  renderSlotContent(parentInstance, instance)
 
   instance.lifecycleHooks = extractDeclarativeHooks(scriptResult, instance)
 
@@ -1170,8 +1287,8 @@ function mountComponent(instance: ComponentInstance): void {
   }
   
   try {
-    fillSlots(instance.cdo, instance.context)
-    
+    fillSlots(instance.cdo, instance.context, instance)
+
     if (instance.cdo.scriptFactory && !instance.autoSync) {
       const scriptFn = instance.cdo.scriptFactory()
       if (typeof scriptFn === 'function') {
@@ -1235,9 +1352,12 @@ function updateComponent(instance: ComponentInstance): void {
     if (instance.context.nodeCache.size === 0) {
       instance.context.nodeCache = populateNodeCache(instance.cdo, instance.root)
     }
-    
-    updateSlots(instance.cdo, instance.context)
-    
+
+    updateSlots(instance.cdo, instance.context, instance)
+    for (const child of instance.children) {
+      updateSlotContent(child)
+    }
+
     instance.lifecycleState = 'updated'
     
     if (instance.lifecycleHooks.onUpdate) {
@@ -1291,11 +1411,17 @@ function unmountComponent(instance: ComponentInstance): void {
   
   try {
     unbindEvents(instance)
+    if (instance.slotEventCleanups) {
+      for (const cleanup of instance.slotEventCleanups) {
+        cleanup()
+      }
+      instance.slotEventCleanups = []
+    }
     for (const child of instance.children) {
       unmountComponent(child)
     }
     instance.children.length = 0
-    
+
     instance.container.innerHTML = ''
     
     const styleElements = document.querySelectorAll(`style[data-yq-scope-id="${instance.cdo.scopeId}"]`)

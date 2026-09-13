@@ -145,6 +145,8 @@ export interface ComponentInstance {
   requestUpdate?: () => void
   handlers?: Record<string, (...args: any[]) => any>
   eventCleanups?: Array<() => void>
+  slotContent?: { parentInstance: ComponentInstance; nodeCache: Map<number, Element>; subtreeIds: Set<number> }
+  slotEventCleanups?: Array<() => void>
 }
 
 export function createRenderContext(state: Record<string, any>, slots: Slot[]): RenderContext {

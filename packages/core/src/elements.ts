@@ -4,6 +4,16 @@ import { createInstanceFromCdo, mountComponent, unmountComponent, bindEvents, un
 
 const registeredElements = new Set<string>()
 
+function findParentInstance(element: Element): ComponentInstance | null {
+  let current = element.parentElement
+  while (current) {
+    const inst = (current as unknown as { _yqInstance?: ComponentInstance })._yqInstance
+    if (inst) return inst
+    current = current.parentElement
+  }
+  return null
+}
+
 export function registerElement(name: string): void {
   if (typeof customElements === 'undefined') return
   if (registeredElements.has(name)) return
@@ -22,7 +32,8 @@ export function registerElement(name: string): void {
       const entry = lookup(name)
       if (!entry) return
       this._yqMounted = true
-      const instance = createInstanceFromCdo(name, entry.cdo, this)
+      const parentInstance = findParentInstance(this)
+      const instance = createInstanceFromCdo(name, entry.cdo, this, parentInstance)
       this._yqInstance = instance
       mountComponent(instance)
       bindEvents(instance)
