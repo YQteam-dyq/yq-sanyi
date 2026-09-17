@@ -161,6 +161,7 @@ packages/core/src      core runtime: registry, parser, reactive, render, scoper,
 packages/core/dist     built bundles (core.mjs, core.global.js)
 packages/core/test     node:test assertion suite
 packages/devtools      optional debug panel (separate bundle)
+bench/                 performance harness: first-interactive, update-latency, scroll-fps
 examples/              runnable HTML demos
 docs/                  tutorials
 scripts/               repo gates: dependency graph and bundle-size checks
@@ -177,8 +178,24 @@ npm run check:all
 
 - `npm run build` — bundle `dist/core.mjs` and `dist/core.global.js`
 - `npm run test` — run the core test suite
-- `npm run bench` — run benchmarks against the §7.4 budget
-- `npm run check:all` — dependency graph and bundle-size gates
+- `npm run bench` — measure the performance budgets and fail when one is missed
+- `npm run check:all` — dependency graph, bundle-size and performance gates
+
+## Performance gate
+
+`npm run bench` measures three budgets and exits non-zero as soon as one of them is missed, so a merge cannot land a rendering regression. CI runs it as part of `npm run check:all`, which is the `Repo gates` step of the required `Build / Typecheck / Test` check.
+
+| Metric | Budget | What is measured |
+| --- | --- | --- |
+| `first-interactive` | `<= 1000 ms` | Cold boot of a 3000-row board: `define` plus template parsing, mounting, the first animation frame, and a click that has to reach the DOM. Reported as the p95 of 10 runs, after 2 warm-up runs. |
+| `update-latency` | `<= 200 ms` | Time from a state write that replaces all 3000 rows to the moment the DOM shows the new revision. Reported as the p95 of 60 updates, after 10 warm-up updates. |
+| `scroll-fps` | `>= 55 fps` | Scroll frames over a 2000-row list with a 200-row window that advances 4 rows per frame. The p95 main-thread cost of one frame is converted into the frame rate a 60 Hz display sustains (`1000 / p95`, capped at 60). |
+
+Three things are worth knowing about the harness:
+
+- It is pure Node and keeps the zero-dependency rule. It installs a small headless DOM, then drives the real render pipeline and reads the real DOM back, so a browser is never required.
+- `scroll-fps` is derived from the measured main-thread cost instead of a wall-clock frame loop. A busy CI runner can therefore not turn timer jitter into a false failure, and the reported `frame p50` / `frame p95` values stay comparable between machines against the 16.67 ms budget of one 60 Hz frame.
+- The workloads are sized to leave roughly 3x to 6x headroom on a normal runner, so the gate reacts to real regressions rather than to noise.
 
 ## Support
 
