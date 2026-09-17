@@ -70,14 +70,16 @@ async function measureFirstInteractive() {
     const host = mountHost(name)
     await nextFrame()
     const marker = findByClass(host._yqInstance.root, 'rev')
+    const picked = findByClass(host._yqInstance.root, 'picked')
     const button = firstRowButton(host._yqInstance.root)
-    if (!marker || !button) {
+    if (!marker || !picked || !button) {
       throw new Error('bench: the boot board did not render a marker or a row button')
     }
     button.dispatch('click')
     await waitForMarker(marker, 1)
+    await waitForMarker(picked, run * BOOT_ROWS)
     const elapsed = now() - start
-    if (marker.textContent !== '1') {
+    if (marker.textContent !== '1' || picked.textContent !== String(run * BOOT_ROWS)) {
       throw new Error('bench: the boot board is not interactive, the click was not applied')
     }
     teardown(host)

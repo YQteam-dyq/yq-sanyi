@@ -36,7 +36,7 @@ function createElement(tag) {
       return Object.prototype.hasOwnProperty.call(element.attrs, name)
     },
     appendChild(child) {
-      if (child && Array.isArray(child.children) && child.tagName === undefined) {
+      if (child && child.nodeType === 11) {
         for (const item of child.children.slice()) {
           element.appendChild(item)
         }
@@ -73,7 +73,6 @@ function createElement(tag) {
       clone.attrs = { ...element.attrs }
       clone.dataset = { ...element.dataset }
       clone.textContent = element.textContent
-      clone.innerHTML = element.innerHTML
       if (deep) {
         clone.children = element.children.map(function (child) {
           return child && typeof child.cloneNode === 'function' ? child.cloneNode(true) : child
@@ -133,6 +132,7 @@ function createElement(tag) {
 
 function createDocumentFragment() {
   const fragment = {
+    nodeType: 11,
     children: [],
     appendChild(child) {
       fragment.children.push(child)
@@ -172,7 +172,7 @@ function installEnv() {
       return document.createElement(tag)
     },
     createTextNode(text) {
-      return { textContent: String(text), children: [], parentElement: null }
+      return { nodeType: 3, textContent: String(text), children: [], parentElement: null }
     },
     createDocumentFragment,
     head: createElement('head'),
